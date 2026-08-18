@@ -27,6 +27,7 @@ class MatchResponse(MatchBase):
     score: Optional[str] = None
     notes: Optional[str] = None
     table_points: Optional[str] = None
+    custom_title: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -40,6 +41,7 @@ class MatchUpdate(BaseModel):
     score: Optional[str] = None
     notes: Optional[str] = None
     table_points: Optional[str] = None
+    custom_title: Optional[str] = None
 
 
 class RallyBase(BaseModel):
@@ -63,6 +65,7 @@ class RallyResponse(RallyBase):
     confidence: float = 0.0
     impact_count: int = 0
     user_marked_highlight: bool = False
+    notes: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -92,3 +95,4 @@ class ProcessingStatus(BaseModel):
 class RallyUpdate(BaseModel):
     validation_status: Optional[str] = None
     user_marked_highlight: Optional[bool] = None
+    notes: Optional[str] = None

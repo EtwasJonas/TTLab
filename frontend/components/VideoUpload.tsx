@@ -1,12 +1,15 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { useLanguage } from "../lib/LanguageContext";
+import { t } from "../lib/translations";
 
 interface VideoUploadProps {
   onUploadComplete: () => void;
 }
 
 export default function VideoUpload({ onUploadComplete }: VideoUploadProps) {
+  const { language } = useLanguage();
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -20,7 +23,9 @@ export default function VideoUpload({ onUploadComplete }: VideoUploadProps) {
     const hasValidExtension = /\.(mp4|avi|mov|mkv|webm)$/i.test(file.name);
     
     if (!hasValidExtension) {
-      setError("Ungültiges Format. Bitte MP4, AVI, MOV, MKV oder WebM verwenden.");
+      setError(language === 'de' 
+        ? "Ungültiges Format. Bitte MP4, AVI, MOV, MKV oder WebM verwenden." 
+        : "Invalid format. Please use MP4, AVI, MOV, MKV or WebM.");
       return;
     }
 
@@ -46,10 +51,12 @@ export default function VideoUpload({ onUploadComplete }: VideoUploadProps) {
         }
         onUploadComplete();
       } else {
-        setError(`❌ Fehler: ${data.detail || "Upload fehlgeschlagen"}`);
+        setError(`❌ ${language === 'de' ? 'Fehler:' : 'Error:'} ${data.detail || (language === 'de' ? "Upload fehlgeschlagen" : "Upload failed")}`);
       }
     } catch (err) {
-      setError("❌ Verbindung zum Server fehlgeschlagen. Ist das Backend gestartet?");
+      setError(language === 'de' 
+        ? "❌ Verbindung zum Server fehlgeschlagen. Ist das Backend gestartet?" 
+        : "❌ Connection to server failed. Is the backend running?");
     } finally {
       setUploading(false);
     }
@@ -57,7 +64,7 @@ export default function VideoUpload({ onUploadComplete }: VideoUploadProps) {
 
   return (
     <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-      <h2 className="text-xl font-semibold mb-4">Neues Video analysieren</h2>
+      <h2 className="text-xl font-semibold mb-4">{t(language, 'upload.analyze_title')}</h2>
       
       <div className="flex items-center gap-4">
         <label className="flex-1">
@@ -79,7 +86,7 @@ export default function VideoUpload({ onUploadComplete }: VideoUploadProps) {
         </label>
         
         {uploading && (
-          <span className="text-blue-400">⏳ Wird hochgeladen...</span>
+          <span className="text-blue-400">{t(language, 'upload.uploading')}</span>
         )}
       </div>
 

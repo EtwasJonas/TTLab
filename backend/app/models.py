@@ -25,6 +25,7 @@ class Match(Base):
     score = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
     table_points = Column(Text, nullable=True)
+    custom_title = Column(String, nullable=True)
 
     rallies = relationship("Rally", back_populates="match", cascade="all, delete-orphan")
 
@@ -45,6 +46,7 @@ class Rally(Base):
     confidence = Column(Float, default=0.0)
     impact_count = Column(Integer, default=0)
     user_marked_highlight = Column(Boolean, default=False)
+    notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     match = relationship("Match", back_populates="rallies")

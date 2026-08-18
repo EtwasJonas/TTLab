@@ -1,5 +1,8 @@
 "use client";
 
+import { useLanguage } from "../lib/LanguageContext";
+import { t } from "../lib/translations";
+
 interface Match {
   id: number;
   filename: string;
@@ -22,16 +25,16 @@ interface MatchListProps {
   onDeleteMatch?: (matchId: number) => void;
 }
 
-const getStatusBadge = (status: string) => {
+const getStatusBadge = (status: string, language: 'de' | 'en') => {
   switch (status) {
     case "completed":
-      return <span className="px-2 py-1 bg-green-900/50 text-green-300 rounded text-xs">Fertig</span>;
+      return <span className="px-2 py-1 bg-green-900/50 text-green-300 rounded text-xs">{language === 'de' ? 'Fertig' : 'Completed'}</span>;
     case "processing":
-      return <span className="px-2 py-1 bg-yellow-900/50 text-yellow-300 rounded text-xs animate-pulse">Verarbeite...</span>;
+      return <span className="px-2 py-1 bg-yellow-900/50 text-yellow-300 rounded text-xs animate-pulse">{language === 'de' ? 'Verarbeite...' : 'Processing...'}</span>;
     case "failed":
-      return <span className="px-2 py-1 bg-red-900/50 text-red-300 rounded text-xs">Fehler</span>;
+      return <span className="px-2 py-1 bg-red-900/50 text-red-300 rounded text-xs">{language === 'de' ? 'Fehler' : 'Failed'}</span>;
     default:
-      return <span className="px-2 py-1 bg-gray-700 text-gray-300 rounded text-xs">Wartend</span>;
+      return <span className="px-2 py-1 bg-gray-700 text-gray-300 rounded text-xs">{language === 'de' ? 'Wartend' : 'Pending'}</span>;
   }
 };
 
@@ -42,9 +45,9 @@ const formatDuration = (seconds: number | null) => {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 };
 
-const formatDate = (dateString: string) => {
+const formatDate = (dateString: string, language: 'de' | 'en') => {
   const date = new Date(dateString);
-  return date.toLocaleDateString("de-DE", {
+  return date.toLocaleDateString(language === 'de' ? "de-DE" : "en-US", {
     day: "2-digit",
     month: "2-digit",
     hour: "2-digit",
@@ -53,11 +56,13 @@ const formatDate = (dateString: string) => {
 };
 
 export default function MatchList({ matches, onSelectMatch, onDeleteMatch }: MatchListProps) {
+  const { language } = useLanguage();
+  
   if (matches.length === 0) {
     return (
       <div className="text-center py-12 text-gray-400">
-        <p className="text-lg">Noch keine Matches vorhanden</p>
-        <p className="text-sm mt-2">Lade dein erstes Video hoch, um mit der Analyse zu beginnen</p>
+        <p className="text-lg">{language === 'de' ? 'Noch keine Matches vorhanden' : 'No matches yet'}</p>
+        <p className="text-sm mt-2">{language === 'de' ? 'Lade dein erstes Video hoch, um mit der Analyse zu beginnen' : 'Upload your first video to start analyzing'}</p>
       </div>
     );
   }
@@ -67,9 +72,9 @@ export default function MatchList({ matches, onSelectMatch, onDeleteMatch }: Mat
       <div className="flex items-end justify-between">
         <div>
           <p className="text-xs uppercase tracking-widest text-blue-300">Library</p>
-          <h2 className="mt-1 text-2xl font-bold">Deine Matches</h2>
+          <h2 className="mt-1 text-2xl font-bold">{language === 'de' ? 'Deine Matches' : 'Your Matches'}</h2>
         </div>
-        <span className="text-sm text-slate-500">{matches.length} Einträge</span>
+        <span className="text-sm text-slate-500">{matches.length} {language === 'de' ? 'Einträge' : 'entries'}</span>
       </div>
       
       <div className="grid gap-4">
@@ -85,10 +90,10 @@ export default function MatchList({ matches, onSelectMatch, onDeleteMatch }: Mat
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2">
                   <h3 className="font-semibold text-white">{match.original_filename}</h3>
-                  {getStatusBadge(match.status)}
+                  {getStatusBadge(match.status, language)}
                 </div>
                 <div className="flex items-center gap-4 text-sm text-gray-400">
-                  <span>📅 {formatDate(match.upload_date)}</span>
+                  <span>📅 {formatDate(match.upload_date, language)}</span>
                   <span>⏱️ {formatDuration(match.duration)}</span>
                 </div>
                 {match.error_message && (
@@ -104,20 +109,22 @@ export default function MatchList({ matches, onSelectMatch, onDeleteMatch }: Mat
                   }}
                   className="text-blue-400 hover:text-blue-300 text-sm"
                 >
-                  Anzeigen →
+                  {language === 'de' ? 'Anzeigen →' : 'View →'}
                 </button>
                 {onDeleteMatch && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (confirm(`Möchtest du "${match.original_filename}" wirklich löschen?`)) {
+                      if (confirm(language === 'de' 
+                        ? `Möchtest du "${match.original_filename}" wirklich löschen?` 
+                        : `Are you sure you want to delete "${match.original_filename}"?`)) {
                         onDeleteMatch(match.id);
                       }
                     }}
                     className="text-red-400 hover:text-red-300 text-sm"
-                    title="Löschen"
+                    title={language === 'de' ? 'Löschen' : 'Delete'}
                   >
-                    🗑️ Löschen
+                    🗑️ {language === 'de' ? 'Löschen' : 'Delete'}
                   </button>
                 )}
               </div>

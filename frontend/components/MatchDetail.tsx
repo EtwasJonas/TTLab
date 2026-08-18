@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useLanguage } from "../lib/LanguageContext";
+import { t } from "../lib/translations";
 
 interface Match {
   id: number;
@@ -19,6 +21,7 @@ interface Match {
   score: string | null;
   notes: string | null;
   table_points: string | null;
+  custom_title: string | null;
 }
 
 interface Rally {
@@ -34,6 +37,19 @@ interface Rally {
   confidence: number;
   impact_count: number;
   user_marked_highlight: boolean;
+  notes: string | null;
+}
+
+interface MatchDetailProps {
+  match: Match;
+  rallies: Rally[];
+  loading: boolean;
+  onRefresh: () => void;
+  onStartAnalysis?: () => void;
+  lastUpdated?: Date;
+  isPlayingClip?: boolean;
+  onClipPlayStart?: () => void;
+  onClipPlayEnd?: () => void;
 }
 
 interface MatchDetailProps {
@@ -106,8 +122,8 @@ function TableSetup({ match, onRefresh }: { match: Match; onRefresh: () => void 
   return (
     <section className="rounded-2xl border border-blue-400/20 bg-blue-500/[0.06] p-5">
       <p className="text-xs uppercase tracking-widest text-blue-300">V0.3 Setup</p>
-      <h3 className="mt-1 text-lg font-semibold">Tischbereich markieren</h3>
-      <p className="mt-2 text-sm text-slate-400">Pausiere das Video an einer gut sichtbaren Stelle und klicke die vier Tischkanten direkt im Bild im Uhrzeigersinn an: oben links, oben rechts, unten rechts, unten links.</p>
+      <h3 className="mt-1 text-lg font-semibold">{t(language, 'table_setup.title')}</h3>
+      <p className="mt-2 text-sm text-slate-400">{t(language, 'table_setup.description')}</p>
 
       <div className="mt-4 overflow-hidden rounded-xl border border-white/10 bg-black">
         <div
@@ -165,11 +181,11 @@ function TableSetup({ match, onRefresh }: { match: Match; onRefresh: () => void 
 
       <div className="mt-3 flex items-center justify-between text-sm">
         <span className={points.length === 4 ? "text-emerald-300" : "text-amber-300"}>
-          {points.length}/4 Punkte gesetzt
+          {t(language, 'table_setup.points_set', { count: points.length })}
         </span>
-        <button onClick={() => setPoints([])} className="text-slate-400 hover:text-white">Punkte zurücksetzen</button>
+        <button onClick={() => setPoints([])} className="text-slate-400 hover:text-white">{t(language, 'table_setup.reset')}</button>
       </div>
-      <button disabled={points.length !== 4 || saving} onClick={savePoints} className="mt-3 w-full rounded-lg bg-blue-500 px-4 py-2 font-semibold text-white hover:bg-blue-400 disabled:opacity-50">{saving ? "Speichere..." : "Tischbereich speichern"}</button>
+      <button disabled={points.length !== 4 || saving} onClick={savePoints} className="mt-3 w-full rounded-lg bg-blue-500 px-4 py-2 font-semibold text-white hover:bg-blue-400 disabled:opacity-50">{saving ? t(language, 'table_setup.saving') : t(language, 'table_setup.save')}</button>
     </section>
   );
 }
@@ -184,11 +200,13 @@ const formatTime = (seconds: number) => {
 export default function MatchDetail({ match, rallies, loading, onRefresh, onStartAnalysis, lastUpdated, isPlayingClip, onClipPlayStart, onClipPlayEnd }: MatchDetailProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentRally, setCurrentRally] = useState<Rally | null>(null);
+  const { language } = useLanguage();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [autoPlayQueue, setAutoPlayQueue] = useState(false);
   const [filterMode, setFilterMode] = useState<"all" | "highlights" | "accepted" | "rejected">("all");
   const [form, setForm] = useState({
+    custom_title: match.custom_title || "",
     match_date: match.match_date?.slice(0, 10) || "",
     player_name: match.player_name || "",
     opponent_name: match.opponent_name || "",
@@ -287,6 +305,19 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
     if (response.ok) onRefresh();
   };
 
+  const updateRallyNotes = async (rallyId: number, newNotes: string) => {
+    // Don't refresh immediately - just save in background to avoid video reset
+    try {
+      await fetch(`http://localhost:8000/api/rallies/${rallyId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: newNotes }),
+      });
+    } catch (error) {
+      console.error("Failed to save notes:", error);
+    }
+  };
+
   const stepVideo = (seconds: number) => {
     if (!videoRef.current) return;
     videoRef.current.currentTime = Math.max(0, Math.min(videoRef.current.duration, videoRef.current.currentTime + seconds));
@@ -322,27 +353,45 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
         </div>
         {editing ? (
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {[["match_date", "Datum", "date"], ["player_name", "Eigener Name", "text"], ["opponent_name", "Gegner", "text"], ["score", "Ergebnis", "text"]].map(([key, label, type]) => (
-              <label key={key} className="text-sm text-slate-400">{label}
-                <input type={type} value={form[key as keyof typeof form]} onChange={(event) => setForm({ ...form, [key]: event.target.value })} className="mt-1 w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-white outline-none focus:border-blue-400" />
+            <label className="text-sm text-slate-400 sm:col-span-2">
+              <span className="block mb-1">Titel (optional)</span>
+              <input 
+                type="text" 
+                value={form.custom_title} 
+                onChange={(event) => setForm({ ...form, custom_title: event.target.value })} 
+                className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-white outline-none focus:border-blue-400" 
+                placeholder="z.B. Training vs. Roboter oder Turnierfinale 2026"
+              />
+            </label>
+            {[["match_date", "Datum", "date"], ["player_name", "Eigener Name", "text"], ["opponent_name", "Gegner", "text"], ["score", "Spielstand", "text"]].map(([key, label, type]) => (
+              <label key={key} className="text-sm text-slate-400">
+                <span className="block mb-1">{label}</span>
+                <input type={type} value={form[key as keyof typeof form]} onChange={(event) => setForm({ ...form, [key]: event.target.value })} className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-white outline-none focus:border-blue-400" />
               </label>
             ))}
-            <label className="text-sm text-slate-400">Resultat
+            <label className="text-sm text-slate-400">
+              <span className="block mb-1">Resultat</span>
               <select value={form.result} onChange={(event) => setForm({ ...form, result: event.target.value })} className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-white">
                 <option value="unknown">Unbekannt</option><option value="win">Sieg</option><option value="loss">Niederlage</option><option value="draw">Unentschieden</option>
               </select>
             </label>
-            <label className="text-sm text-slate-400 sm:col-span-2">Notizen
+            <label className="text-sm text-slate-400 sm:col-span-2">
+              <span className="block mb-1">Notizen</span>
               <textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} rows={3} className="mt-1 w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-white outline-none focus:border-blue-400" />
             </label>
             <button onClick={saveMetadata} disabled={saving} className="rounded-lg bg-blue-500 px-4 py-2 font-semibold text-white hover:bg-blue-400 disabled:opacity-50 sm:col-span-2">{saving ? "Speichere..." : "Metadaten speichern"}</button>
           </div>
         ) : (
-          <div className="mt-4 grid gap-3 text-sm text-slate-300 sm:grid-cols-4">
-            <span><b className="block text-xs text-slate-500">Spieler</b>{match.player_name || "Nicht gesetzt"}</span>
-            <span><b className="block text-xs text-slate-500">Gegner</b>{match.opponent_name || "Nicht gesetzt"}</span>
-            <span><b className="block text-xs text-slate-500">Resultat</b>{match.result || "Unbekannt"}</span>
-            <span><b className="block text-xs text-slate-500">Spielstand</b>{match.score || "-"}</span>
+          <div className="mt-4 space-y-2">
+            {match.custom_title && (
+              <div className="text-lg font-semibold text-white">{match.custom_title}</div>
+            )}
+            <div className="grid gap-3 text-sm text-slate-300 sm:grid-cols-4">
+              <span><b className="block text-xs text-slate-500">Spieler</b>{match.player_name || "-"}</span>
+              <span><b className="block text-xs text-slate-500">Gegner</b>{match.opponent_name || "-"}</span>
+              <span><b className="block text-xs text-slate-500">Resultat</b>{match.result === "win" ? "🟢 Sieg" : match.result === "loss" ? "🔴 Niederlage" : match.result === "draw" ? "🟡 Unentschieden" : "-"}</span>
+              <span><b className="block text-xs text-slate-500">Spielstand</b>{match.score || "-"}</span>
+            </div>
           </div>
         )}
       </section>
@@ -354,9 +403,9 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
           <div className="flex items-center gap-3">
             <span className="text-blue-400 text-xl">⏸️</span>
             <div>
-              <h3 className="text-lg font-semibold text-blue-300">Analyse noch nicht gestartet</h3>
+              <h3 className="text-lg font-semibold text-blue-300">{t(language, 'analysis.pending.title')}</h3>
               <p className="text-sm text-gray-400">
-                Das Video wurde hochgeladen, aber die Analyse wurde noch nicht gestartet.
+                {t(language, 'analysis.pending.description')}
               </p>
             </div>
           </div>
@@ -365,7 +414,7 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
             onClick={handleStartAnalysis}
             className="w-full py-3 bg-blue-600 hover:bg-blue-500 rounded text-white font-semibold transition-colors"
           >
-            ▶️ Analyse jetzt starten
+            {t(language, 'analysis.pending.start')}
           </button>
           </div>
         </div>
@@ -377,9 +426,9 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
             <div className="flex items-center gap-3">
               <span className="text-yellow-400 text-xl">⏳</span>
               <div>
-                <h3 className="text-lg font-semibold text-yellow-300">Video wird analysiert</h3>
+                <h3 className="text-lg font-semibold text-yellow-300">{t(language, 'analysis.processing.title')}</h3>
                 <p className="text-sm text-gray-400">
-                  {match.progress_message || "Analyse läuft..."}
+                  {match.progress_message || t(language, 'analysis.processing.message')}
                 </p>
               </div>
             </div>
@@ -387,13 +436,13 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
               onClick={onRefresh}
               className="px-4 py-2 bg-yellow-700 hover:bg-yellow-600 rounded text-sm text-white transition-colors"
             >
-              🔄 Aktualisieren
+              {t(language, 'common.refresh')}
             </button>
           </div>
 
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
-              <span className="text-gray-400">Fortschritt</span>
+              <span className="text-gray-400">{t(language, 'analysis.progress')}</span>
               <span className="text-yellow-300">{Math.round(progress)}%</span>
             </div>
             <div className="w-full bg-slate-800 rounded-full h-3 overflow-hidden">
@@ -406,11 +455,11 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
 
           <div className="grid grid-cols-2 gap-4 pt-2">
             <div className="bg-white/[0.05] rounded-xl p-3">
-              <p className="text-xs text-gray-400">Erkannte Rallys</p>
+              <p className="text-xs text-gray-400">{t(language, 'analysis.detected_rallies')}</p>
               <p className="text-2xl font-bold text-white">{rallies.length}</p>
             </div>
             <div className="bg-white/[0.05] rounded-xl p-3">
-              <p className="text-xs text-gray-400">Highlights</p>
+              <p className="text-xs text-gray-400">{t(language, 'analysis.highlights')}</p>
               <p className="text-2xl font-bold text-yellow-400">
                 {rallies.filter(r => r.is_highlight).length}
               </p>
@@ -419,26 +468,26 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
 
           {lastUpdated && (
             <p className="text-xs text-gray-500 text-center pt-2">
-              Zuletzt aktualisiert: {lastUpdated.toLocaleTimeString()}
+              {t(language, 'common.last_updated')}: {lastUpdated.toLocaleTimeString()}
             </p>
           )}
 
           <div className="bg-blue-900/20 border border-blue-700 rounded p-3 text-sm text-blue-300">
-            💡 <strong>Tipp:</strong> Die Analyse läuft im Hintergrund. Du kannst diese Seite verlassen und später zurückkommen.
+            💡 <strong>{t(language, 'common.tip')}:</strong> {t(language, 'analysis.tip')}
           </div>
         </div>
       )}
 
       {match.status === "failed" && (
         <div className="bg-red-900/30 border border-red-700 rounded p-4 text-red-300">
-          ❌ Analyse fehlgeschlagen: {match.error_message}
+          ❌ {t(language, 'analysis.failed')} {match.error_message}
         </div>
       )}
 
       {loading ? (
-        <div className="text-center py-8 text-gray-400">Lade Rallys...</div>
+        <div className="text-center py-8 text-gray-400">{t(language, 'common.loading')}...</div>
       ) : rallies.length === 0 && match.status === "completed" ? (
-        <div className="text-center py-8 text-gray-400">Keine Rallys erkannt</div>
+        <div className="text-center py-8 text-gray-400">{t(language, 'rally.no_rallies_detected')}</div>
       ) : (
         <>
           {currentRally && currentRally.clip_filename && (
@@ -455,7 +504,7 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
                       : "bg-white/[0.08] text-slate-300 hover:bg-white/[0.14]"
                   }`}
                 >
-                  {currentRally.user_marked_highlight ? "⭐ Highlight setzen" : "☆ Als Highlight markieren"}
+                  {currentRally.user_marked_highlight ? t(language, 'rally.highlight.set') : t(language, 'rally.highlight.mark')}
                 </button>
               </div>
               <video
@@ -480,9 +529,27 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
                 }}
               />
               <div className="mt-3 flex items-center gap-2">
-                <button onClick={() => stepVideo(-0.1)} className="rounded bg-white/[0.08] px-3 py-1.5 text-xs text-slate-300 hover:bg-white/[0.14]">⏪ -100ms</button>
-                <button onClick={() => stepVideo(0.1)} className="rounded bg-white/[0.08] px-3 py-1.5 text-xs text-slate-300 hover:bg-white/[0.14]">+100ms ⏩</button>
-                <span className="ml-auto text-xs text-slate-500">Pfeiltasten links/rechts funktionieren auch</span>
+                <button onClick={() => stepVideo(-0.1)} className="rounded bg-white/[0.08] px-3 py-1.5 text-xs text-slate-300 hover:bg-white/[0.14]">{t(language, 'rally.step_back')}</button>
+                <button onClick={() => stepVideo(0.1)} className="rounded bg-white/[0.08] px-3 py-1.5 text-xs text-slate-300 hover:bg-white/[0.14]">{t(language, 'rally.step_forward')}</button>
+                <span className="ml-auto text-xs text-slate-500">{t(language, 'rally.keyboard_tip')}</span>
+              </div>
+              
+              <div className="mt-4">
+                <label className="text-sm text-slate-400 block mb-2">
+                  📝 {t(language, 'match.detail.notes')}
+                </label>
+                <textarea
+                  value={currentRally.notes || ""}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    const newNotes = e.target.value;
+                    setCurrentRally({ ...currentRally, notes: newNotes });
+                    updateRallyNotes(currentRally.id, newNotes);
+                  }}
+                  placeholder={language === 'de' ? "z.B. Rückhand zu spät, Aufschlag gut platziert..." : "e.g. Backhand too late, serve well placed..."}
+                  rows={3}
+                  className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-white outline-none focus:border-blue-400 resize-none"
+                />
               </div>
             </div>
           )}
@@ -490,8 +557,8 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
           <div className="rounded-2xl bg-white/[0.06] border border-white/10 overflow-hidden">
             <div className="p-4 border-b border-gray-700 flex items-center justify-between">
               <div>
-                <h3 className="font-semibold">Rally Timeline</h3>
-                <p className="text-xs text-slate-400 mt-1">{displayedRallies.length} von {allRallies.length} Rallys angezeigt</p>
+                <h3 className="font-semibold">{t(language, 'rally.timeline.title')}</h3>
+                <p className="text-xs text-slate-400 mt-1">{t(language, 'rally.timeline.displayed', { current: displayedRallies.length, total: allRallies.length })}</p>
               </div>
               <div className="flex items-center gap-2">
                 <select
@@ -499,16 +566,16 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
                   onChange={(e) => setFilterMode(e.target.value as typeof filterMode)}
                   className="rounded-lg bg-white/[0.08] px-3 py-1.5 text-xs text-slate-300 outline-none focus:ring-1 focus:ring-blue-400"
                 >
-                  <option value="all">Alle Rallys</option>
-                  <option value="highlights">⭐ Highlights</option>
-                  <option value="accepted">✅ Ballwechsel</option>
-                  <option value="rejected">❌ Kein Ballwechsel</option>
+                  <option value="all">{t(language, 'rally.filter.all')}</option>
+                  <option value="highlights">{t(language, 'rally.filter.highlights')}</option>
+                  <option value="accepted">{t(language, 'rally.filter.accepted')}</option>
+                  <option value="rejected">{t(language, 'rally.filter.rejected')}</option>
                 </select>
                 <button
                   onClick={() => { setAutoPlayQueue(!autoPlayQueue); if (!autoPlayQueue && currentRally) { const video = document.querySelector("video"); if (video) video.play(); }}}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${autoPlayQueue ? "bg-emerald-500 text-black" : "bg-white/[0.08] text-slate-300 hover:bg-white/[0.14]"}`}
                 >
-                  {autoPlayQueue ? "▶ Auto-Play AN" : "⏸ Auto-Play AUS"}
+                  {autoPlayQueue ? t(language, 'rally.auto_play.on') : t(language, 'rally.auto_play.off')}
                 </button>
               </div>
             </div>
@@ -537,7 +604,7 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
                       <div className="flex items-center gap-1.5">
                         {rally.user_marked_highlight && (
                           <span className="inline-flex items-center gap-1 rounded-md bg-yellow-500/10 px-2 py-0.5 text-xs font-medium text-yellow-400 whitespace-nowrap">
-                            ⭐ Highlight
+                            {t(language, 'rally.highlight')}
                           </span>
                         )}
                         <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium whitespace-nowrap ${
@@ -547,14 +614,14 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
                             ? "bg-red-500/10 text-red-400" 
                             : "bg-amber-500/10 text-amber-400"
                         }`}>
-                          {rally.validation_status === "accepted" ? "✅ Sicher" : rally.validation_status === "rejected" ? "❌ Verworfen" : "⚠️ Prüfen"}
+                          {rally.validation_status === "accepted" ? t(language, 'rally.status.accepted') : rally.validation_status === "rejected" ? t(language, 'rally.status.rejected') : t(language, 'rally.status.review')}
                         </span>
                       </div>
                     </div>
                     
                     {rally.clip_filename ? (
                       <div className="flex items-center gap-3">
-                        <button className="text-blue-400 hover:text-blue-300 text-sm">▶ Abspielen</button>
+                        <button className="text-blue-400 hover:text-blue-300 text-sm">{t(language, 'rally.play')}</button>
                         <button 
                           onClick={(event) => { 
                             event.stopPropagation(); 
@@ -567,11 +634,14 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
                               : "bg-red-500/20 text-red-300 hover:bg-red-500/30"
                           }`}
                         >
-                          {rally.validation_status === "rejected" ? "✅ Behalten" : "❌ Kein Ballwechsel"}
+                          {rally.validation_status === "rejected" ? t(language, 'rally.keep') : t(language, 'rally.reject')}
                         </button>
+                        {rally.notes && (
+                          <span className="text-xs text-slate-500" title={rally.notes}>📝</span>
+                        )}
                       </div>
                     ) : (
-                      <span className="text-gray-500 text-sm">Kein Clip</span>
+                      <span className="text-gray-500 text-sm">{t(language, 'rally.no_clip')}</span>
                     )}
                   </div>
                 </div>

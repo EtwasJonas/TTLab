@@ -250,6 +250,8 @@ async def update_rally(
     if update_data.user_marked_highlight is not None:
         rally.user_marked_highlight = update_data.user_marked_highlight
         rally.is_highlight = update_data.user_marked_highlight
+    if update_data.notes is not None:
+        rally.notes = update_data.notes
     await db.commit()
     await db.refresh(rally)
     return rally

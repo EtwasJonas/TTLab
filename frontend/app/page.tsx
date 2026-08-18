@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import VideoUpload from "@/components/VideoUpload";
 import MatchList from "@/components/MatchList";
 import MatchDetail from "@/components/MatchDetail";
+import { useLanguage } from "../lib/LanguageContext";
+import { t } from "../lib/translations";
 
 interface Match {
   id: number;
@@ -40,6 +42,7 @@ interface Rally {
 }
 
 export default function Home() {
+  const { language } = useLanguage();
   const [matches, setMatches] = useState<Match[]>([]);
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
   const [rallies, setRallies] = useState<Rally[]>([]);
@@ -64,7 +67,7 @@ export default function Home() {
         setMatches(data);
       }
     } catch (error) {
-      console.error("Fehler beim Laden der Matches:", error);
+      console.error("Error loading matches:", error);
     }
   };
 
@@ -133,25 +136,25 @@ export default function Home() {
     <div className="space-y-8">
       <section className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-5 shadow-2xl shadow-blue-950/20">
-          <p className="text-xs uppercase tracking-widest text-slate-500">Matches</p>
+          <p className="text-xs uppercase tracking-widest text-slate-500">{t(language, 'dashboard.total_matches')}</p>
           <p className="mt-2 text-3xl font-bold">{matches.length}</p>
-          <p className="mt-1 text-sm text-slate-400">deine Video-Bibliothek</p>
+          <p className="mt-1 text-sm text-slate-400">{language === 'de' ? 'deine Video-Bibliothek' : 'your video library'}</p>
         </div>
         <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-5">
-          <p className="text-xs uppercase tracking-widest text-slate-500">Analysiert</p>
+          <p className="text-xs uppercase tracking-widest text-slate-500">{t(language, 'dashboard.analyzed')}</p>
           <p className="mt-2 text-3xl font-bold text-emerald-300">{completedMatches}</p>
-          <p className="mt-1 text-sm text-slate-400">fertige Auswertungen</p>
+          <p className="mt-1 text-sm text-slate-400">{language === 'de' ? 'fertige Auswertungen' : 'completed analyses'}</p>
         </div>
         <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-5">
-          <p className="text-xs uppercase tracking-widest text-slate-500">Aktiv</p>
+          <p className="text-xs uppercase tracking-widest text-slate-500">{t(language, 'dashboard.active')}</p>
           <p className="mt-2 text-3xl font-bold text-amber-300">{processingMatches}</p>
-          <p className="mt-1 text-sm text-slate-400">laufende Analysen</p>
+          <p className="mt-1 text-sm text-slate-400">{language === 'de' ? 'laufende Analysen' : 'running analyses'}</p>
         </div>
       </section>
       <VideoUpload onUploadComplete={fetchMatches} />
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm text-slate-400">Bibliothek filtern:</span>
-        {[['all', 'Alle'], ['win', 'Siege'], ['loss', 'Niederlagen'], ['processing', 'In Arbeit']].map(([value, label]) => (
+        <span className="text-sm text-slate-400">{language === 'de' ? 'Bibliothek filtern:' : 'Filter library:'}</span>
+        {[['all', t(language, 'match.filter.all')], ['win', t(language, 'match.filter.wins')], ['loss', t(language, 'match.filter.losses')], ['processing', language === 'de' ? 'In Arbeit' : 'In Progress']].map(([value, label]) => (
           <button
             key={value}
             onClick={() => setLibraryFilter(value)}
@@ -170,7 +173,7 @@ export default function Home() {
           }}
           className="text-blue-400 hover:text-blue-300"
         >
-          ← Zurück zur Übersicht
+          ← {t(language, 'common.back')}
         </button>
       )}
 

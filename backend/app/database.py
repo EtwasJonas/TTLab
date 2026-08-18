@@ -31,6 +31,7 @@ async def init_db():
             "score": "VARCHAR",
             "notes": "TEXT",
             "table_points": "TEXT",
+            "custom_title": "VARCHAR",
         }.items():
             if column not in existing:
                 await conn.execute(text(f"ALTER TABLE matches ADD COLUMN {column} {sql_type}"))
@@ -42,6 +43,7 @@ async def init_db():
             "confidence": "FLOAT DEFAULT 0",
             "impact_count": "INTEGER DEFAULT 0",
             "user_marked_highlight": "BOOLEAN DEFAULT FALSE",
+            "notes": "TEXT",
         }.items():
             if column not in existing_rally:
                 await conn.execute(text(f"ALTER TABLE rallies ADD COLUMN {column} {sql_type}"))
