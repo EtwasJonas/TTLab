@@ -207,7 +207,7 @@ Special thanks to:
 
 | Platform | Link |
 |----------|------|
-| GitHub | [@YOUR_USERNAME](https://github.com/YOUR_USERNAME) |
+| GitHub | [@EtwasJonas](https://github.com/EtwasJonas) |
 | Website | _Coming soon_ |
 | Discord | _Coming soon_ |
 
