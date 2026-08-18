@@ -524,22 +524,32 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
                   `}
                 >
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="font-mono text-sm text-gray-400 w-16">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <span className="font-mono text-sm text-gray-400 w-16 shrink-0">
                         {formatTime(rally.start_time)}
                       </span>
-                      <span className="font-medium">
+                      <span className="font-semibold text-white min-w-[80px] text-center">
                         Rally {rally.id}
                       </span>
-                      <span className="text-sm text-gray-400">
-                        ({formatTime(rally.duration)})
+                      <span className="text-sm text-gray-500 min-w-[60px] text-center">
+                        {formatTime(rally.duration)}
                       </span>
-                      {rally.is_highlight && (
-                        <span className="text-yellow-400 text-sm">⭐ Highlight</span>
-                      )}
-                      <span className={`text-xs rounded-full px-2 py-0.5 ${rally.validation_status === "accepted" ? "bg-emerald-400/10 text-emerald-300" : rally.validation_status === "rejected" ? "bg-red-400/10 text-red-300" : "bg-amber-400/10 text-amber-300"}`}>
-                        {rally.validation_status === "accepted" ? "Sicher" : rally.validation_status === "rejected" ? "Verworfen" : "Prüfen"}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {rally.user_marked_highlight && (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-yellow-500/10 px-2 py-0.5 text-xs font-medium text-yellow-400 whitespace-nowrap">
+                            ⭐ Highlight
+                          </span>
+                        )}
+                        <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium whitespace-nowrap ${
+                          rally.validation_status === "accepted" 
+                            ? "bg-emerald-500/10 text-emerald-400" 
+                            : rally.validation_status === "rejected" 
+                            ? "bg-red-500/10 text-red-400" 
+                            : "bg-amber-500/10 text-amber-400"
+                        }`}>
+                          {rally.validation_status === "accepted" ? "✅ Sicher" : rally.validation_status === "rejected" ? "❌ Verworfen" : "⚠️ Prüfen"}
+                        </span>
+                      </div>
                     </div>
                     
                     {rally.clip_filename ? (
