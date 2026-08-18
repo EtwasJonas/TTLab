@@ -1,0 +1,30 @@
+# Automatische Zeilenenden für alle Plattformen
+* text=auto
+
+# Explizit LF für Code-Dateien
+*.py text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.css text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Batch-Dateien müssen CRLF bleiben auf Windows
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binärdateien unverändert
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.mp4 binary
+*.avi binary
+*.mov binary
+*.mkv binary
+*.webm binary

@@ -1,0 +1,13 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+sqlalchemy==2.0.37
+aiosqlite==0.20.0
+pydantic==2.10.5
+opencv-python==4.11.0.86
+numpy==2.2.3
+scipy==1.15.2
+librosa==0.11.0
+ffmpeg-python==0.2.0
+python-dotenv==1.0.1
+aiofiles==24.1.0

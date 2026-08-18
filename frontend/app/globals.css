@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #080b12;
+  --foreground: #f4f7fb;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: Arial, Helvetica, sans-serif;
+  background-image: radial-gradient(circle at 15% 0%, rgba(36, 116, 255, 0.16), transparent 30rem),
+    radial-gradient(circle at 90% 10%, rgba(236, 72, 153, 0.1), transparent 26rem);
+  min-height: 100vh;
+}
+
+button, input { font: inherit; }
