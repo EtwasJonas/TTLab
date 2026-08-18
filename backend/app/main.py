@@ -21,6 +21,7 @@ from app.schemas import (
     RallyDetectionResponse,
     ProcessingStatus,
     MatchUpdate,
+    RallyUpdate,
 )
 from app.rally_detection import RallyDetector
 from app.video_processor import VideoProcessor
@@ -235,21 +236,20 @@ async def update_match(match_id: int, payload: MatchUpdate, db: AsyncSession = D
 @app.patch("/api/rallies/{rally_id}", response_model=RallyResponse)
 async def update_rally(
     rally_id: int,
-    validation_status: Optional[str] = None,
-    user_marked_highlight: Optional[bool] = None,
+    update_data: RallyUpdate,
     db: AsyncSession = Depends(get_db)
 ):
-    if validation_status and validation_status not in {"accepted", "review", "rejected"}:
+    if update_data.validation_status and update_data.validation_status not in {"accepted", "review", "rejected"}:
         raise HTTPException(status_code=400, detail="Ungültiger Rally-Status")
     result = await db.execute(select(Rally).where(Rally.id == rally_id))
     rally = result.scalar_one_or_none()
     if not rally:
         raise HTTPException(status_code=404, detail="Rally nicht gefunden")
-    if validation_status:
-        rally.validation_status = validation_status
-    if user_marked_highlight is not None:
-        rally.user_marked_highlight = user_marked_highlight
-        rally.is_highlight = user_marked_highlight
+    if update_data.validation_status:
+        rally.validation_status = update_data.validation_status
+    if update_data.user_marked_highlight is not None:
+        rally.user_marked_highlight = update_data.user_marked_highlight
+        rally.is_highlight = update_data.user_marked_highlight
     await db.commit()
     await db.refresh(rally)
     return rally

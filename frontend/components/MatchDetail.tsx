@@ -187,7 +187,7 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [autoPlayQueue, setAutoPlayQueue] = useState(false);
-  const [highlightFilter, setHighlightFilter] = useState<"all" | "highlights">("all");
+  const [filterMode, setFilterMode] = useState<"all" | "highlights" | "accepted" | "rejected">("all");
   const [form, setForm] = useState({
     match_date: match.match_date?.slice(0, 10) || "",
     player_name: match.player_name || "",
@@ -198,12 +198,23 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
   });
 
   // Treat legacy rallies without a status as accepted. Also show "review" rallies for manual checking.
-  const acceptedRallies = rallies.filter(r => {
+  const allRallies = rallies.filter(r => {
     const vs = r.validation_status as string | null | undefined;
-    const valid = vs == null || vs === "" || vs === "accepted" || vs === "review";
-    return valid;
+    return vs == null || vs === "" || vs === "accepted" || vs === "review" || vs === "rejected";
   });
-  const displayedRallies = highlightFilter === "highlights" ? acceptedRallies.filter(r => r.user_marked_highlight) : acceptedRallies;
+  
+  const displayedRallies = (() => {
+    switch (filterMode) {
+      case "highlights":
+        return allRallies.filter(r => r.user_marked_highlight);
+      case "accepted":
+        return allRallies.filter(r => r.validation_status === "accepted" || r.validation_status === "review");
+      case "rejected":
+        return allRallies.filter(r => r.validation_status === "rejected");
+      default:
+        return allRallies;
+    }
+  })();
 
   const progress = Math.max(0, Math.min(100, match.progress ?? 0));
 
@@ -259,12 +270,20 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
   };
 
   const updateRallyStatus = async (rallyId: number, status: string) => {
-    const response = await fetch(`http://localhost:8000/api/rallies/${rallyId}?validation_status=${status}`, { method: "PATCH" });
+    const response = await fetch(`http://localhost:8000/api/rallies/${rallyId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ validation_status: status }),
+    });
     if (response.ok) onRefresh();
   };
 
   const toggleHighlight = async (rallyId: number, current: boolean) => {
-    const response = await fetch(`http://localhost:8000/api/rallies/${rallyId}?user_marked_highlight=${!current}`, { method: "PATCH" });
+    const response = await fetch(`http://localhost:8000/api/rallies/${rallyId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_marked_highlight: !current }),
+    });
     if (response.ok) onRefresh();
   };
 
@@ -430,9 +449,13 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
                 </h3>
                 <button
                   onClick={() => toggleHighlight(currentRally.id, currentRally.user_marked_highlight)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${currentRally.user_marked_highlight ? "bg-yellow-500 text-black hover:bg-yellow-400" : "bg-white/[0.08] text-slate-300 hover:bg-white/[0.14]"}`}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                    currentRally.user_marked_highlight 
+                      ? "bg-yellow-500 text-black hover:bg-yellow-400" 
+                      : "bg-white/[0.08] text-slate-300 hover:bg-white/[0.14]"
+                  }`}
                 >
-                  {currentRally.user_marked_highlight ? "⭐ Highlight" : "☆ Kein Highlight"}
+                  {currentRally.user_marked_highlight ? "⭐ Highlight setzen" : "☆ Als Highlight markieren"}
                 </button>
               </div>
               <video
@@ -468,15 +491,19 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
             <div className="p-4 border-b border-gray-700 flex items-center justify-between">
               <div>
                 <h3 className="font-semibold">Rally Timeline</h3>
-                <p className="text-xs text-slate-400 mt-1">{displayedRallies.length} von {acceptedRallies.length} akzeptierten Rallys angezeigt</p>
+                <p className="text-xs text-slate-400 mt-1">{displayedRallies.length} von {allRallies.length} Rallys angezeigt</p>
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setHighlightFilter(highlightFilter === "all" ? "highlights" : "all")}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${highlightFilter === "highlights" ? "bg-yellow-500 text-black" : "bg-white/[0.08] text-slate-300 hover:bg-white/[0.14]"}`}
+                <select
+                  value={filterMode}
+                  onChange={(e) => setFilterMode(e.target.value as typeof filterMode)}
+                  className="rounded-lg bg-white/[0.08] px-3 py-1.5 text-xs text-slate-300 outline-none focus:ring-1 focus:ring-blue-400"
                 >
-                  {highlightFilter === "highlights" ? "⭐ Nur Highlights" : "Alle anzeigen"}
-                </button>
+                  <option value="all">Alle Rallys</option>
+                  <option value="highlights">⭐ Highlights</option>
+                  <option value="accepted">✅ Ballwechsel</option>
+                  <option value="rejected">❌ Kein Ballwechsel</option>
+                </select>
                 <button
                   onClick={() => { setAutoPlayQueue(!autoPlayQueue); if (!autoPlayQueue && currentRally) { const video = document.querySelector("video"); if (video) video.play(); }}}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${autoPlayQueue ? "bg-emerald-500 text-black" : "bg-white/[0.08] text-slate-300 hover:bg-white/[0.14]"}`}
@@ -518,8 +545,19 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
                     {rally.clip_filename ? (
                       <div className="flex items-center gap-3">
                         <button className="text-blue-400 hover:text-blue-300 text-sm">▶ Abspielen</button>
-                        <button onClick={(event) => { event.stopPropagation(); updateRallyStatus(rally.id, rally.validation_status === "rejected" ? "accepted" : "rejected"); }} className="text-xs text-slate-400 hover:text-white">
-                          {rally.validation_status === "rejected" ? "Behalten" : "Kein Ballwechsel"}
+                        <button 
+                          onClick={(event) => { 
+                            event.stopPropagation(); 
+                            const newStatus = rally.validation_status === "rejected" ? "accepted" : "rejected";
+                            updateRallyStatus(rally.id, newStatus);
+                          }} 
+                          className={`text-xs px-2 py-1 rounded transition ${
+                            rally.validation_status === "rejected" 
+                              ? "bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30" 
+                              : "bg-red-500/20 text-red-300 hover:bg-red-500/30"
+                          }`}
+                        >
+                          {rally.validation_status === "rejected" ? "✅ Behalten" : "❌ Kein Ballwechsel"}
                         </button>
                       </div>
                     ) : (

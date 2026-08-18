@@ -87,3 +87,8 @@ class ProcessingStatus(BaseModel):
     progress: Optional[float] = None
     progress_message: Optional[str] = None
     rallies_count: Optional[int] = None
+
+
+class RallyUpdate(BaseModel):
+    validation_status: Optional[str] = None
+    user_marked_highlight: Optional[bool] = None
