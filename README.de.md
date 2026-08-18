@@ -27,10 +27,14 @@ TTLab ist eine **Open-Source-Alternative** zu vergleichbaren kommerziellen Platt
 
 ## 📸 Einblicke
 
-> *Screenshots hinzufügen:*
-> - Dashboard mit Match-Übersicht
-> - Detail-Ansicht mit Tischkalibrierung
-> - Rally-Timeline mit Filtern
+![Dashboard](docs/screenshots/dashboard.png)
+*Dashboard mit Match-Übersicht, Statistiken und Upload-Bereich.*
+
+![Tischkalibrierung](docs/screenshots/table-calibration.png)
+*Interaktive Tischmarkierung – 4 Ecken klicken um den Spielbereich zu definieren.*
+
+![Rally Timeline](docs/screenshots/rally-timeline.png)
+*Rally-Timeline mit Notizen, Filtern und Validierungsstatus für jeden Ballwechsel.*
 
 ---
 

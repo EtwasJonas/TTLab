@@ -67,6 +67,7 @@ interface MatchDetailProps {
 const ACCEPTED_RALLIES_ONLY = false;
 
 function TableSetup({ match, onRefresh }: { match: Match; onRefresh: () => void }) {
+  const { language } = useLanguage();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [points, setPoints] = useState<[number, number][]>(() => {
     if (!match.table_points) return [];

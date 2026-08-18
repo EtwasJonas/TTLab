@@ -27,10 +27,14 @@ TTLab is an **open-source alternative** to commercial table tennis analysis plat
 
 ## 📸 Screenshots
 
-> *Add your screenshots here:*
-> - Dashboard with match overview
-> - Match detail with table calibration
-> - Rally timeline with filters
+![Dashboard](docs/screenshots/dashboard.png)
+*Dashboard with match overview, statistics, and upload area.*
+
+![Table Calibration](docs/screenshots/table-calibration.png)
+*Interactive table calibration – click 4 corners to define the playing area.*
+
+![Rally Timeline](docs/screenshots/rally-timeline.png)
+*Rally timeline with notes, filters, and validation status for each ball exchange.*
 
 ---
 
