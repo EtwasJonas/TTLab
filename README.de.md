@@ -1,31 +1,30 @@
-# 🏓 TTLab – KI-gestützte Tischtennis-Videoanalyse
+# TTLab – KI-gestützte Tischtennis-Videoanalyse
 
-[![Version](https://img.shields.io/badge/Version-0.3.0-blue.svg)](https://github.com/yourusername/ttlab/releases)
-[![License](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.13+-green.svg)](https://python.org)
-[![Next.js](https://img.shields.io/badge/Next.js-19-black.svg?logo=next.js)](https://nextjs.org)
-[![Built with](https://img.shields.io/badge/Built%20with-opencode-purple.svg)](https://opencode.ai)
+[![Version](https://img.shields.io/badge/Version-0.3.0-blue)](https://github.com/yourusername/ttlab/releases)
+[![License](https://img.shields.io/badge/License-Proprietary-red)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.13+-green)](https://python.org)
+[![Next.js](https://img.shields.io/badge/Next.js-19-black)](https://nextjs.org)
 
 **Automatische Ballwechsel-Erkennung für Tischtennis-Videos – 100% lokal, ohne Cloud-Zwang.**
 
 ---
 
-## 🎯 Was ist TTLab?
+## Überblick
 
-TTLab ist eine **Open-Source-Alternative** zu vergleichbaren kommerziellen Plattformen. Die Software analysiert deine Trainingsvideos automatisch, erkennt Ballwechsel (Rallies) durch KI-gestützte Bewegungs- und Audioanalyse, und extrahiert diese als einzelne Clips – alles **lokal auf deinem Rechner**, ohne Abo-Kosten oder Datenweitergabe an Dritte.
+TTLab ist eine Open-Source-Alternative zu vergleichbaren kommerziellen Plattformen. Die Software analysiert Trainingsvideos automatisch, erkennt Ballwechsel durch KI-gestützte Bewegungs- und Audioanalyse, und extrahiert diese als einzelne Clips – alles lokal auf deinem Rechner ohne Abo-Kosten oder Datenweitergabe an Dritte.
 
-### ✨ Kernfunktionen
+### Kernfunktionen
 
-- 🎾 **Automatische Rally-Erkennung** – Kombination aus Motion Detection, Audio-Peaks und Ball-Tracking
-- 🔒 **100% Lokal & Privat** – Keine Cloud, keine API-Calls, deine Videos bleiben privat
-- 📊 **Match-Verwaltung** – Metadaten, Statistiken, Filter nach Sieg/Niederlage
-- ⚡ **Schnelle Analyse** – Asynchrone Verarbeitung im Hintergrund mit Fortschrittsanzeige
-- 🛠️ **Manuelle Kalibrierung** – Interaktive Tischmarkierung für präzisere Erkennung
-- 🎬 **Clip-Export** – Alle akzeptierten Highlights als einzelnes Video exportieren
+- **Automatische Rally-Erkennung** – Kombination aus Motion Detection, Audio-Peaks und Ball-Tracking
+- **100% Lokal & Privat** – Keine Cloud, keine API-Calls, Videos bleiben privat
+- **Match-Verwaltung** – Metadaten, Statistiken, Filter nach Sieg/Niederlage
+- **Schnelle Analyse** – Asynchrone Verarbeitung im Hintergrund mit Fortschrittsanzeige
+- **Manuelle Kalibrierung** – Interaktive Tischmarkierung für präzisere Erkennung
+- **Clip-Export** – Alle akzeptierten Highlights als einzelnes Video exportieren
 
 ---
 
-## 📸 Einblicke
+## Screenshots
 
 ![Dashboard](docs/screenshots/dashboard.png)
 *Dashboard mit Match-Übersicht, Statistiken und Upload-Bereich.*
@@ -38,11 +37,11 @@ TTLab ist eine **Open-Source-Alternative** zu vergleichbaren kommerziellen Platt
 
 ---
 
-## 🚀 Schnelleinstieg
+## Schnelleinstieg
 
-### Ein-Klick-Start (Windows) ⭐
+### Ein-Klick-Start (Windows)
 
-**Nach der Installation** einfach doppelt auf **"TTLab starten.bat"** auf dem Desktop klicken – Backend und Frontend werden automatisch gestartet. Keine Terminal-Befehle nötig!
+Nach der Installation einfach doppelt auf **"TTLab starten.bat"** auf dem Desktop klicken.
 
 ### Voraussetzungen
 
@@ -52,7 +51,7 @@ TTLab ist eine **Open-Source-Alternative** zu vergleichbaren kommerziellen Platt
 | Node.js | 20+ | [Download](https://nodejs.org) |
 | FFmpeg | 7.x | [Anleitung](https://www.gyan.dev/ffmpeg/builds/) |
 
-### Installation in 5 Minuten
+### Installation
 
 ```bash
 # 1. Repository klonen
@@ -62,24 +61,21 @@ cd ttlab
 # 2. Backend installieren
 cd backend
 uv venv
-.\venv\Scripts\activate  # Windows
+.\venv\Scripts\activate
 uv pip install -r requirements.txt
 
 # 3. Frontend installieren
 cd ../frontend
 npm install
-
-# 4. Desktop-Verknüpfung erstellen (Windows)
-# Kopiere "TTLab starten.bat" auf deinen Desktop
 ```
 
-**FFmpeg nicht vergessen!** Ohne FFmpeg können keine Clips extrahiert werden.
+**Hinweis:** FFmpeg wird für die Clip-Erstellung benötigt.
 
 ---
 
-## 📖 Bedienung
+## Bedienung
 
-### Erster Workflow
+### Workflow
 
 1. **Video hochladen** – MP4, AVI, MOV, MKV oder WebM über das Frontend
 2. **Tisch markieren** – 4 Ecken im Video anklicken (einmal pro Match)
@@ -87,34 +83,34 @@ npm install
 4. **Rallies prüfen** – Timeline durchgehen, falsche Erkennungen ablehnen
 5. **Highlights exportieren** – Alle akzeptierten Ballwechsel als Video
 
-### Filter-Funktionen
+### Filter
 
 - **Alle Rallys** – Vollständige Liste
-- **⭐ Highlights** – Manuell markierte Top-Ballwechsel
-- **✅ Ballwechsel** – Nur akzeptierte Rallys
-- **❌ Kein Ballwechsel** – Abgelehnte Erkennungen
+- **Highlights** – Manuell markierte Top-Ballwechsel
+- **Ballwechsel** – Nur akzeptierte Rallys
+- **Kein Ballwechsel** – Abgelehnte Erkennungen
 
 ### Sprachumschaltung
 
-Klicke auf den **🇩🇪 DE / 🇬🇧 EN** Button oben rechts, um zwischen deutscher und englischer Oberfläche zu wechseln.
+Oben rechts zwischen Deutsch und Englisch wechseln.
 
 ---
 
-## 🗺️ Roadmap
+## Roadmap
 
 | Version | Status | Features |
 |---------|--------|----------|
-| **V0.1** | ✅ | Video Upload, Rally Detection (Motion + Audio), Clip-Export |
-| **V0.2** | ✅ | Match-Metadaten, Statistik-Dashboard, Ergebnis-Filter |
-| **V0.3** | ✅ | Tischkalibrierung, Rally-Validierung, 100ms-Navigation |
-| **V0.4** | 🔄 | Trainiertes YOLOv8n-Ball-Tracking, Labeling-Tool |
-| **V0.5** | ⏳ | Player Detection, Pose Estimation, Schlagtyp-Erkennung |
-| **V0.6** | ⏳ | Taktik-Analyse, Heatmaps, Schwachstellen-Erkennung |
-| **V1.0** | ⏳ | KI-Coach (LLM), Spielerprofile, Trainingspläne |
+| V0.1 | Veröffentlicht | Video Upload, Rally Detection (Motion + Audio), Clip-Export |
+| V0.2 | Veröffentlicht | Match-Metadaten, Statistik-Dashboard, Ergebnis-Filter |
+| V0.3 | Veröffentlicht | Tischkalibrierung, Rally-Validierung, 100ms-Navigation |
+| V0.4 | In Arbeit | Trainiertes YOLOv8n-Ball-Tracking, Labeling-Tool |
+| V0.5 | Geplant | Player Detection, Pose Estimation, Schlagtyp-Erkennung |
+| V0.6 | Geplant | Taktik-Analyse, Heatmaps, Schwachstellen-Erkennung |
+| V1.0 | Geplant | KI-Coach (LLM), Spielerprofile, Trainingspläne |
 
 ---
 
-## 🏗️ Architektur
+## Architektur
 
 ```
 ┌─────────────────────┐
@@ -145,77 +141,44 @@ Klicke auf den **🇩🇪 DE / 🇬🇧 EN** Button oben rechts, um zwischen deu
 
 ---
 
-## 🤝 Mitmachen
+## Mitmachen
 
-### Beitrag leisten
-
-- 🐛 **Fehler melden** – [Issue öffnen](https://github.com/DEIN_USERNAME/ttlab/issues)
-- 💡 **Feature wünschen** – Diskussion im [Discussions-Tab](https://github.com/DEIN_USERNAME/ttlab/discussions)
-- 🔧 **Code beitragen** – Pull Requests sind willkommen!
-
-### Entwicklung
-
-```bash
-# Backend testen
-cd backend
-pytest
-
-# Frontend testen
-cd frontend
-npm run test
-```
+- Fehler über [Issues](https://github.com/DEIN_USERNAME/ttlab/issues) melden
+- Feature-Wünsche in [Discussions](https://github.com/DEIN_USERNAME/ttlab/discussions)
+- Pull Requests willkommen
 
 ---
 
-## ❓ FAQ
+## FAQ
 
 **F: Warum wird mein Video nicht analysiert?**  
-A: Stelle sicher, dass FFmpeg installiert und im PATH ist. Prüfe die Console-Logs des Backends.
+A: FFmpeg muss installiert und im PATH sein. Backend-Console prüfen.
 
 **F: Kann ich TTLab auf einem Server betreiben?**  
-A: Ja! Anleitung unter [Deployment](docs/DEPLOYMENT.md).
+A: Ja! Siehe Deployment-Dokumentation.
 
 **F: Wie genau ist die Rally-Erkennung?**  
-A: V0.3 erreicht ~60-70% Precision. V0.4 mit trainiertem Modell soll >90% erreichen.
+A: V0.3 erreicht ~60-70% Precision. V0.4 zielt auf >90%.
 
 **F: Sind mehrere Benutzer möglich?**  
-A: Aktuell nein. Multi-User-Support ist für V1.0 geplant.
+A: Aktuell nein. Für V1.0 geplant.
 
 ---
 
-## 📄 Lizenz
+## Lizenz
 
-Dieses Projekt ist **proprietär**. Alle Rechte vorbehalten.
-
-Eine kommerzielle Nutzung ist nur mit ausdrücklicher Genehmigung gestattet.
-
-Siehe [LICENSE](LICENSE) für Details.
+Dieses Projekt ist proprietär. Alle Rechte vorbehalten. Kommerzielle Nutzung nur mit Genehmigung. Siehe [LICENSE](LICENSE) für Details.
 
 ---
 
-## 🙏 Danksagung
+## Danksagung
 
-**Entwickelt mit [opencode](https://opencode.ai)** – KI-gestützte Code-Generierung für moderne Webanwendungen.
-
-Besonderer Dank an:
-- Die Tischtennis-Community für Inspiration und Feedback
-- Open-Source-Projekte wie OpenCV, FastAPI und Next.js
-
----
-
-## 📬 Kontakt
-
-| Platform | Link |
-|----------|------|
-| GitHub | [@DEIN_USERNAME](https://github.com/DEIN_USERNAME) |
-| Website | _kommt bald_ |
-| Discord | _kommt bald_ |
+Entwickelt mit [opencode](https://opencode.ai). Dank an die Tischtennis-Community und Open-Source-Projekte wie OpenCV, FastAPI und Next.js.
 
 ---
 
 <div align="center">
 
-**Made with ❤️ for Table Tennis Players**  
-[⬆ Nach oben](#ttlab-ki-gestützte-tischtennis-videoanalyse)
+**Für Tischtennisspieler entwickelt**
 
 </div>
