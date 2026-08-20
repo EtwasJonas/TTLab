@@ -1,4 +1,12 @@
+<div align="center">
+
+<img src="docs/logo.svg" alt="TTLab Logo" width="400" />
+
 # TTLab – KI-gestützte Tischtennis-Videoanalyse
+
+*Table Tennis Intelligence*
+
+</div>
 
 [![Version](https://img.shields.io/badge/Version-0.3.0-blue)](https://github.com/yourusername/ttlab/releases)
 [![License](https://img.shields.io/badge/License-Proprietary-red)](LICENSE)

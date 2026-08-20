@@ -1,6 +1,6 @@
 <div align="center">
 
-![TTLab Logo](docs/logo.svg)
+<img src="docs/logo.svg" alt="TTLab Logo" width="400" />
 
 # TTLab – AI-Powered Table Tennis Video Analysis
 
