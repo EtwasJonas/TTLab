@@ -319,6 +319,48 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
     }
   };
 
+  const downloadAllClips = async () => {
+    try {
+      // Try fast download first
+      const response = await fetch(`http://localhost:8000/api/matches/${match.id}/export-all-rallies-video?fast=true`);
+      if (!response.ok) throw new Error('Fast download failed');
+      
+      // Create download link
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `all_rallies_${match.id}.mp4`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Fast download failed, trying compatible mode:", error);
+      // Fallback to compatible mode
+      window.open(`http://localhost:8000/api/matches/${match.id}/export-all-rallies-video`, '_blank');
+    }
+  };
+
+  const downloadHighlights = async () => {
+    try {
+      // Try fast download first
+      const response = await fetch(`http://localhost:8000/api/matches/${match.id}/export-highlights-video?fast=true`);
+      if (!response.ok) throw new Error('Fast download failed');
+      
+      // Create download link
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `highlights_${match.id}.mp4`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Fast download failed, trying compatible mode:", error);
+      // Fallback to compatible mode
+      window.open(`http://localhost:8000/api/matches/${match.id}/export-highlights-video`, '_blank');
+    }
+  };
+
   const stepVideo = (seconds: number) => {
     if (!videoRef.current) return;
     videoRef.current.currentTime = Math.max(0, Math.min(videoRef.current.duration, videoRef.current.currentTime + seconds));
@@ -572,6 +614,20 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
                   <option value="accepted">{t(language, 'rally.filter.accepted')}</option>
                   <option value="rejected">{t(language, 'rally.filter.rejected')}</option>
                 </select>
+                <button
+                  onClick={downloadAllClips}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium transition bg-blue-600 text-white hover:bg-blue-700"
+                  title={language === 'de' ? 'Alle Clips herunterladen' : 'Download all clips'}
+                >
+                  ⬇️ {language === 'de' ? 'Alle Clips' : 'All Clips'}
+                </button>
+                <button
+                  onClick={downloadHighlights}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium transition bg-yellow-600 text-white hover:bg-yellow-700"
+                  title={language === 'de' ? 'Nur Highlights herunterladen' : 'Download only highlights'}
+                >
+                  ⭐ {language === 'de' ? 'Highlights' : 'Highlights'}
+                </button>
                 <button
                   onClick={() => { setAutoPlayQueue(!autoPlayQueue); if (!autoPlayQueue && currentRally) { const video = document.querySelector("video"); if (video) video.play(); }}}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${autoPlayQueue ? "bg-emerald-500 text-black" : "bg-white/[0.08] text-slate-300 hover:bg-white/[0.14]"}`}

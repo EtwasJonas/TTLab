@@ -102,6 +102,24 @@ def start_analysis_job(match_id: int):
 
 
 def process_match_background_sync(match_id: int):
+    import queue
+    
+    progress_queue: queue.Queue[tuple[float, str]] = queue.Queue()
+    
+    async def update_progress_from_queue():
+        while True:
+            try:
+                value, message = progress_queue.get_nowait()
+                async with async_session_maker() as progress_db:
+                    result = await progress_db.execute(select(Match).where(Match.id == match_id))
+                    current = result.scalar_one_or_none()
+                    if current:
+                        current.progress = value
+                        current.progress_message = message
+                        await progress_db.commit()
+            except queue.Empty:
+                break
+    
     async def process():
         async def update_progress(value: float, message: str):
             async with async_session_maker() as progress_db:
@@ -125,15 +143,19 @@ def process_match_background_sync(match_id: int):
                 match.progress_message = "Analyse wird vorbereitet"
                 await db.commit()
 
+            # Create progress callback for rally detection - writes to queue
+            def progress_callback(progress: float, message: str):
+                progress_queue.put((progress, message))
+            
             await update_progress(10, "Videodaten werden gelesen")
             rally_detector = RallyDetector()
             rallies = rally_detector.detect_rallies(
                 match.file_path,
                 use_audio=True,
-                progress_callback=None,
+                progress_callback=progress_callback,
                 table_points=json.loads(match.table_points) if match.table_points else None,
             )
-            await update_progress(65, f"{len(rallies)} Rally-Kandidaten gefunden")
+            await update_progress(70, f"{len(rallies)} Rally-Kandidaten gefunden")
 
             processor = VideoProcessor(CLIP_STORAGE_PATH)
             
@@ -143,7 +165,7 @@ def process_match_background_sync(match_id: int):
                 current = result.scalar_one_or_none()
                 if current:
                     current.duration = video_info['duration']
-                    current.progress = 70
+                    current.progress = 72
                     current.progress_message = "Rally-Clips werden erstellt"
                     await db.commit()
 
@@ -153,7 +175,7 @@ def process_match_background_sync(match_id: int):
                 processed_rallies.extend(
                     processor.create_rally_clips(match.file_path, [rally], match_id)
                 )
-                await update_progress(70 + (index + 1) / total * 25, f"Clip {index + 1} von {len(rallies)} erstellt")
+                await update_progress(72 + (index + 1) / total * 25, f"Clip {index + 1} von {len(rallies)} erstellt")
 
             await update_progress(99, "Ergebnisse werden gespeichert")
             async with async_session_maker() as db:
@@ -165,11 +187,11 @@ def process_match_background_sync(match_id: int):
                         duration=rally_data['duration'],
                         clip_filename=rally_data.get('clip_filename'),
                         clip_path=rally_data.get('clip_path'),
-                        highlight_score=rally_data.get('score', 0.0),
-                        is_highlight=rally_data.get('score', 0.0) > 0.5
-                        ,validation_status=rally_data.get('validation_status', 'review')
-                        ,confidence=rally_data.get('confidence', 0.0)
-                        ,impact_count=rally_data.get('impact_count', 0)
+                        highlight_score=rally_data.get('highlight_score', 0.0),
+                        is_highlight=rally_data.get('is_highlight', False),
+                        validation_status=rally_data.get('validation_status', 'accepted'),
+                        confidence=rally_data.get('confidence', 0.0),
+                        impact_count=rally_data.get('impact_count', 0),
                     )
                     db.add(rally)
 
@@ -257,9 +279,9 @@ async def update_rally(
     return rally
 
 
-@app.get("/api/matches/{match_id}/export-highlights")
-async def export_highlights(match_id: int, db: AsyncSession = Depends(get_db)):
-    """Returns list of accepted rallies with user-marked highlights first."""
+@app.get("/api/matches/{match_id}/export-highlights-video")
+async def export_highlights_video(match_id: int, fast: bool = False, db: AsyncSession = Depends(get_db)):
+    """Export all highlights as a single concatenated video file."""
     result = await db.execute(select(Match).where(Match.id == match_id))
     match = result.scalar_one_or_none()
     if not match:
@@ -267,11 +289,210 @@ async def export_highlights(match_id: int, db: AsyncSession = Depends(get_db)):
     
     rally_result = await db.execute(
         select(Rally)
-        .where(Rally.match_id == match_id, Rally.validation_status == "accepted")
-        .order_by(Rally.user_marked_highlight.desc(), Rally.start_time)
+        .where(Rally.match_id == match_id, Rally.user_marked_highlight == True, Rally.clip_filename.isnot(None))
+        .order_by(Rally.start_time)
     )
     rallies = rally_result.scalars().all()
-    return {"match_id": match_id, "rallies": rallies, "total": len(rallies)}
+    
+    if not rallies:
+        raise HTTPException(status_code=404, detail="Keine Highlights verfügbar")
+    
+    # Use FFmpeg to concatenate clips
+    import subprocess
+    
+    output_filename = f"highlights_{match_id}.mp4"
+    output_path = os.path.join(CLIP_STORAGE_PATH, output_filename)
+    
+    # Create list file for FFmpeg concat (use absolute paths with forward slashes)
+    list_file = os.path.join(CLIP_STORAGE_PATH, f"highlights_{match_id}.txt")
+    with open(list_file, 'w', encoding='utf-8') as f:
+        for rally in rallies:
+            # clip_filename is just the filename, add CLIP_STORAGE_PATH
+            clip_path = os.path.abspath(os.path.join(CLIP_STORAGE_PATH, rally.clip_filename)).replace('\\', '/')
+            f.write(f"file '{clip_path}'\n")
+    
+    # Concatenate using FFmpeg
+    try:
+        if fast:
+            # Fast copy mode (no re-encoding, ~2 seconds)
+            # May have compatibility issues if clips have different codecs
+            subprocess.run([
+                'ffmpeg', '-y', '-f', 'concat', '-safe', '0',
+                '-i', list_file,
+                '-c', 'copy',
+                output_path
+            ], check=True, capture_output=True, text=True)
+        else:
+            # Compatible mode (re-encoded, ~1 minute, works everywhere)
+            subprocess.run([
+                'ffmpeg', '-y', '-f', 'concat', '-safe', '0',
+                '-i', list_file,
+                '-c:v', 'libx264',           # H.264 video codec
+                '-preset', 'medium',         # Good balance speed/quality
+                '-crf', '23',                # Quality (18-28 is good range)
+                '-c:a', 'aac',               # AAC audio codec
+                '-b:a', '192k',              # Audio bitrate
+                '-movflags', '+faststart',   # Enable web playback
+                '-pix_fmt', 'yuv420p',       # Compatible pixel format
+                output_path
+            ], check=True, capture_output=True, text=True)
+        
+        # Clean up list file
+        if os.path.exists(list_file):
+            os.remove(list_file)
+        
+        return FileResponse(
+            output_path,
+            media_type='video/mp4',
+            filename=output_filename
+        )
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(status_code=500, detail=f"FFmpeg error: {e.stderr}")
+
+
+@app.get("/api/matches/{match_id}/export-all-rallies-video")
+async def export_all_rallies_video(match_id: int, fast: bool = False, db: AsyncSession = Depends(get_db)):
+    """Export all rallies as a single concatenated video file."""
+    result = await db.execute(select(Match).where(Match.id == match_id))
+    match = result.scalar_one_or_none()
+    if not match:
+        raise HTTPException(status_code=404, detail="Match nicht gefunden")
+    
+    rally_result = await db.execute(
+        select(Rally)
+        .where(Rally.match_id == match_id, Rally.clip_filename.isnot(None))
+        .order_by(Rally.start_time)
+    )
+    rallies = rally_result.scalars().all()
+    
+    if not rallies:
+        raise HTTPException(status_code=404, detail="Keine Clips verfügbar")
+    
+    # Use FFmpeg to concatenate clips
+    import subprocess
+    
+    output_filename = f"all_rallies_{match_id}.mp4"
+    output_path = os.path.join(CLIP_STORAGE_PATH, output_filename)
+    
+    # Create list file for FFmpeg concat (use absolute paths with forward slashes)
+    list_file = os.path.join(CLIP_STORAGE_PATH, f"all_rallies_{match_id}.txt")
+    with open(list_file, 'w', encoding='utf-8') as f:
+        for rally in rallies:
+            # clip_filename is just the filename, add CLIP_STORAGE_PATH
+            clip_path = os.path.abspath(os.path.join(CLIP_STORAGE_PATH, rally.clip_filename)).replace('\\', '/')
+            f.write(f"file '{clip_path}'\n")
+    
+    # Concatenate using FFmpeg
+    try:
+        if fast:
+            # Fast copy mode (no re-encoding, ~2 seconds)
+            subprocess.run([
+                'ffmpeg', '-y', '-f', 'concat', '-safe', '0',
+                '-i', list_file,
+                '-c', 'copy',
+                output_path
+            ], check=True, capture_output=True, text=True)
+        else:
+            # Compatible mode (re-encoded, ~1 minute, works everywhere)
+            subprocess.run([
+                'ffmpeg', '-y', '-f', 'concat', '-safe', '0',
+                '-i', list_file,
+                '-c:v', 'libx264',           # H.264 video codec
+                '-preset', 'medium',         # Good balance speed/quality
+                '-crf', '23',                # Quality (18-28 is good range)
+                '-c:a', 'aac',               # AAC audio codec
+                '-b:a', '192k',              # Audio bitrate
+                '-movflags', '+faststart',   # Enable web playback
+                '-pix_fmt', 'yuv420p',       # Compatible pixel format
+                output_path
+            ], check=True, capture_output=True, text=True)
+        
+        # Clean up list file
+        if os.path.exists(list_file):
+            os.remove(list_file)
+        
+        return FileResponse(
+            output_path,
+            media_type='video/mp4',
+            filename=output_filename
+        )
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(status_code=500, detail=f"FFmpeg error: {e.stderr}")
+
+
+@app.get("/api/matches/{match_id}/download-all-rallies")
+async def download_all_rallies(match_id: int, db: AsyncSession = Depends(get_db)):
+    """Download all rallies as individual clips or combined video."""
+    result = await db.execute(select(Match).where(Match.id == match_id))
+    match = result.scalar_one_or_none()
+    if not match:
+        raise HTTPException(status_code=404, detail="Match nicht gefunden")
+    
+    rally_result = await db.execute(
+        select(Rally)
+        .where(Rally.match_id == match_id, Rally.clip_filename.isnot(None))
+        .order_by(Rally.start_time)
+    )
+    rallies = rally_result.scalars().all()
+    
+    if not rallies:
+        raise HTTPException(status_code=404, detail="Keine Clips verfügbar")
+    
+    # Return list of clip URLs for download
+    clip_urls = [
+        {
+            "id": rally.id,
+            "start_time": rally.start_time,
+            "end_time": rally.end_time,
+            "url": f"http://localhost:8000/api/clips/{rally.clip_filename}",
+            "duration": rally.duration,
+        }
+        for rally in rallies
+    ]
+    
+    return {
+        "match_id": match_id,
+        "filename": match.original_filename,
+        "clips": clip_urls,
+        "total": len(clip_urls),
+    }
+
+
+@app.get("/api/matches/{match_id}/download-highlights")
+async def download_highlights(match_id: int, db: AsyncSession = Depends(get_db)):
+    """Download only highlighted rallies."""
+    result = await db.execute(select(Match).where(Match.id == match_id))
+    match = result.scalar_one_or_none()
+    if not match:
+        raise HTTPException(status_code=404, detail="Match nicht gefunden")
+    
+    rally_result = await db.execute(
+        select(Rally)
+        .where(Rally.match_id == match_id, Rally.user_marked_highlight == True, Rally.clip_filename.isnot(None))
+        .order_by(Rally.start_time)
+    )
+    rallies = rally_result.scalars().all()
+    
+    if not rallies:
+        raise HTTPException(status_code=404, detail="Keine Highlights verfügbar")
+    
+    clip_urls = [
+        {
+            "id": rally.id,
+            "start_time": rally.start_time,
+            "end_time": rally.end_time,
+            "url": f"http://localhost:8000/api/clips/{rally.clip_filename}",
+            "duration": rally.duration,
+        }
+        for rally in rallies
+    ]
+    
+    return {
+        "match_id": match_id,
+        "filename": match.original_filename,
+        "highlights": clip_urls,
+        "total": len(rallies),
+    }
 
 
 @app.post("/api/matches/{match_id}/analyze", response_model=dict)

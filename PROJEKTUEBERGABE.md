@@ -1,7 +1,7 @@
 # TTLab - Projektübergabe & Entwicklungsstand
 
-**Version:** V0.3 (in Entwicklung → V0.4)  
-**Datum:** 17. August 2026  
+**Version:** V0.4 (Video-Export optimiert)  
+**Datum:** 23. August 2026  
 **Projekttyp:** Lokale Videoanalyse-Plattform für Tischtennis mit KI-gestützter Ballwechsel-Erkennung
 
 ---
@@ -371,7 +371,38 @@ ttlab/data/
 
 ---
 
-### V0.3 (Tischkalibrierung & Validierung - aktuell)
+### V0.4 (Video-Export & Performance - abgeschlossen)
+
+**Neue Funktionen:**
+
+- ✅ Dual-Mode Video-Export (Fast Mode ~2s / Compatible Mode ~60s)
+- ✅ Windows Media Player Kompatibilität garantiert
+- ✅ Automatischer Fallback bei Inkompatibilität
+- ✅ H.264 Main Profile + AAC Encoding
+- ✅ yuv420p Pixel-Format für maximale Kompatibilität
+
+**Algorithmus-Verbesserungen:**
+
+- Smart Fallback Logik im Frontend
+- Blob-basierter Download mit Fehlerbehandlung
+- Query-Parameter `?fast=true` für schnellen Export
+
+**Bugfixes:**
+
+- Windows Media Player Error 0x80004005 behoben
+- Export-Dauer von 60s auf 2s reduziert (wenn möglich)
+- CORS-Konfiguration für Blob-Downloads korrigiert
+
+**Database Changes:** Keine
+
+**API-Endpunkte erweitert:**
+
+- `GET /api/matches/{id}/export-highlights-video?fast=true` - Schneller Modus
+- `GET /api/matches/{id}/export-all-rallies-video?fast=true` - Schneller Modus
+
+---
+
+### V0.3 (Tischkalibrierung & Validierung - abgeschlossen)
 
 **Neue Funktionen:**
 
@@ -418,14 +449,20 @@ ttlab/data/
 
 ---
 
-### V0.4 (Geplant - Ball-Tracking Modell)
+### V0.4 (Abgeschlossen - Ball-Tracking Modell & Video-Export)
 
-**Ziele:**
+**Abgeschlossene Teile:**
 
-- Trainiertes YOLOv8n oder RT-DETR Modell für Ball-Erkennung
-- Reduktion False Positives (Gehbewegungen, Serve-Vorbereitung)
-- Ball-Trajektorie-Analyse (Flugkurve rekonstruieren)
-- Spin-Erkennung (Magnus-Effekt sichtbar machen)
+- ✅ Dual-Mode Video-Export (Fast/Compatible)
+- ✅ Windows Media Player Kompatibilität
+- ✅ Smart Fallback Download-Logik
+
+**Ausstehende Teile (V0.4.1 geplant):**
+
+- [ ] Trainiertes YOLOv8n oder RT-DETR Modell für Ball-Erkennung
+- [ ] Reduktion False Positives (Gehbewegungen, Serve-Vorbereitung)
+- [ ] Ball-Trajektorie-Analyse (Flugkurve rekonstruieren)
+- [ ] Spin-Erkennung (Magnus-Effekt sichtbar machen)
 
 **Meilensteine:**
 
@@ -479,7 +516,7 @@ ttlab/data/
 
 ## Aktueller Entwicklungsstand
 
-### Abgeschlossene Tasks (V0.1 - V0.3)
+### Abgeschlossene Tasks (V0.1 - V0.4)
 
 #### Backend
 
@@ -492,6 +529,8 @@ ttlab/data/
 - [x] Background-Job für Videoanalyse
 - [x] Status-Tracking (pending → analyzing → ready)
 - [x] Error-Handling mit sinnvollen Fehlermeldungen
+- [x] **Dual-Mode Video-Export (Fast/Compatible)**
+- [x] **Windows Media Player Kompatibilität**
 
 #### Frontend
 
@@ -506,6 +545,8 @@ ttlab/data/
 - [x] Statistik-Cards (Gesamtübersicht)
 - [x] Delete-Button für Matches
 - [x] Export-Funktion (Highlights concat)
+- [x] **Smart Fallback Download-Logik**
+- [x] **Blob-basierter Download mit Fehlerbehandlung**
 
 #### Infrastruktur
 
@@ -556,7 +597,7 @@ ttlab/data/
 
 #### GitHub-Repository Setup
 
-**Status:** In Progress
+**Status:** In Progress (V0.4 ready for commit)
 
 **Aufgaben:**
 
@@ -565,18 +606,13 @@ ttlab/data/
 - [ ] Remote-Repository auf GitHub anlegen
 - [ ] Push durchführen (`git remote add origin`, `git push -u origin main`)
 
-**Entscheidung ausstehend:** User wählt zwischen
-
-- **GitHub Desktop:** GUI-basiert, einfacher für Einsteiger
-- **Git CLI:** Befehlszeile, mehr Kontrolle, Skript-fähig
-
 **Empfohlene Vorgehensweise:**
 
 ```bash
 cd C:\Users\Jonas\Documents\OpenCode\ttlab
 git init
 git add .
-git commit -m "Initial commit: TTLab V0.3"
+git commit -m "Initial commit: TTLab V0.4 - Video-Export optimiert"
 # GitHub Desktop: Repository hinzufügen und pushen
 # ODER CLI:
 git remote add origin https://github.com/USERNAME/ttlab.git
