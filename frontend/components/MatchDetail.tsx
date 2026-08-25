@@ -206,6 +206,7 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
   const [saving, setSaving] = useState(false);
   const [autoPlayQueue, setAutoPlayQueue] = useState(false);
   const [filterMode, setFilterMode] = useState<"all" | "highlights" | "accepted" | "rejected">("all");
+  const [localRallies, setLocalRallies] = useState<Rally[]>(rallies);
   const [form, setForm] = useState({
     custom_title: match.custom_title || "",
     match_date: match.match_date?.slice(0, 10) || "",
@@ -216,8 +217,18 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
     notes: match.notes || "",
   });
 
+  useEffect(() => {
+    setLocalRallies(rallies);
+  }, [rallies]);
+
+  const getRallyNumber = (rallyId: number): number => {
+    const sortedRallies = [...allRallies].sort((a, b) => a.start_time - b.start_time);
+    const index = sortedRallies.findIndex(r => r.id === rallyId);
+    return index + 1;
+  };
+
   // Treat legacy rallies without a status as accepted. Also show "review" rallies for manual checking.
-  const allRallies = rallies.filter(r => {
+  const allRallies = localRallies.filter(r => {
     const vs = r.validation_status as string | null | undefined;
     return vs == null || vs === "" || vs === "accepted" || vs === "review" || vs === "rejected";
   });
@@ -288,26 +299,63 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
     }
   };
 
-  const updateRallyStatus = async (rallyId: number, status: string) => {
-    const response = await fetch(`http://localhost:8000/api/rallies/${rallyId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ validation_status: status }),
-    });
-    if (response.ok) onRefresh();
+  const updateRallyStatus = async (rallyId: number, newStatus: string) => {
+    setLocalRallies(prev => prev.map(r => 
+      r.id === rallyId ? { ...r, validation_status: newStatus } : r
+    ));
+    
+    if (currentRally?.id === rallyId) {
+      setCurrentRally(prev => prev ? { ...prev, validation_status: newStatus } : null);
+    }
+    
+    try {
+      await fetch(`http://localhost:8000/api/rallies/${rallyId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ validation_status: newStatus }),
+      });
+    } catch (error) {
+      console.error("Failed to save status:", error);
+      const revertedStatus = newStatus === "rejected" ? "accepted" : "rejected";
+      setLocalRallies(prev => prev.map(r => 
+        r.id === rallyId ? { ...r, validation_status: revertedStatus } : r
+      ));
+      if (currentRally?.id === rallyId) {
+        setCurrentRally(prev => prev ? { ...prev, validation_status: revertedStatus } : null);
+      }
+    }
   };
 
   const toggleHighlight = async (rallyId: number, current: boolean) => {
-    const response = await fetch(`http://localhost:8000/api/rallies/${rallyId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user_marked_highlight: !current }),
-    });
-    if (response.ok) onRefresh();
+    const newHighlightState = !current;
+    
+    setLocalRallies(prev => prev.map(r => 
+      r.id === rallyId ? { ...r, user_marked_highlight: newHighlightState, is_highlight: newHighlightState } : r
+    ));
+    
+    if (currentRally?.id === rallyId) {
+      setCurrentRally(prev => prev ? { ...prev, user_marked_highlight: newHighlightState, is_highlight: newHighlightState } : null);
+    }
+    
+    try {
+      await fetch(`http://localhost:8000/api/rallies/${rallyId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_marked_highlight: newHighlightState }),
+      });
+    } catch (error) {
+      console.error("Failed to save highlight:", error);
+      setLocalRallies(prev => prev.map(r => 
+        r.id === rallyId ? { ...r, user_marked_highlight: current, is_highlight: current } : r
+      ));
+    }
   };
 
   const updateRallyNotes = async (rallyId: number, newNotes: string) => {
-    // Don't refresh immediately - just save in background to avoid video reset
+    setLocalRallies(prev => prev.map(r => 
+      r.id === rallyId ? { ...r, notes: newNotes } : r
+    ));
+    
     try {
       await fetch(`http://localhost:8000/api/rallies/${rallyId}`, {
         method: "PATCH",
@@ -537,18 +585,30 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
             <div className="rounded-2xl bg-white/[0.06] p-4 border border-white/10">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold">
-                  Rally {currentRally.id} ({formatTime(currentRally.duration)})
+                  Rally {getRallyNumber(currentRally.id)} ({formatTime(currentRally.duration)})
                 </h3>
-                <button
-                  onClick={() => toggleHighlight(currentRally.id, currentRally.user_marked_highlight)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
-                    currentRally.user_marked_highlight 
-                      ? "bg-yellow-500 text-black hover:bg-yellow-400" 
-                      : "bg-white/[0.08] text-slate-300 hover:bg-white/[0.14]"
-                  }`}
-                >
-                  {currentRally.user_marked_highlight ? t(language, 'rally.highlight.set') : t(language, 'rally.highlight.mark')}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => updateRallyStatus(currentRally.id, currentRally.validation_status === "rejected" ? "accepted" : "rejected")}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                      currentRally.validation_status === "rejected" 
+                        ? "bg-emerald-500 text-black hover:bg-emerald-400" 
+                        : "bg-red-500/20 text-red-300 hover:bg-red-500/30"
+                    }`}
+                  >
+                    {currentRally.validation_status === "rejected" ? t(language, 'rally.validate.accept') : t(language, 'rally.validate.reject')}
+                  </button>
+                  <button
+                    onClick={() => toggleHighlight(currentRally.id, currentRally.user_marked_highlight)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                      currentRally.user_marked_highlight 
+                        ? "bg-yellow-500 text-black hover:bg-yellow-400" 
+                        : "bg-white/[0.08] text-slate-300 hover:bg-white/[0.14]"
+                    }`}
+                  >
+                    {currentRally.user_marked_highlight ? t(language, 'rally.highlight.remove') : t(language, 'rally.highlight.mark')}
+                  </button>
+                </div>
               </div>
               <video
                 ref={videoRef}
@@ -653,7 +713,7 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
                         {formatTime(rally.start_time)}
                       </span>
                       <span className="font-semibold text-white min-w-[80px] text-center">
-                        Rally {rally.id}
+                        Rally {getRallyNumber(rally.id)}
                       </span>
                       <span className="text-sm text-gray-500 min-w-[60px] text-center">
                         {formatTime(rally.duration)}

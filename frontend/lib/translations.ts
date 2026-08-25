@@ -74,11 +74,14 @@ export const translations = {
     'rally.keep': '✅ Behalten',
     'rally.reject': '❌ Kein Ballwechsel',
     'rally.no_clip': 'Kein Clip',
-    'rally.highlight.set': '⭐ Highlight setzen',
+    'rally.highlight.set': '⭐ Highlight entfernen',
     'rally.highlight.mark': '☆ Als Highlight markieren',
+    'rally.highlight.remove': '⭐ Highlight entfernen',
     'rally.step_back': '⏪ -100ms',
     'rally.step_forward': '+100ms ⏩',
     'rally.keyboard_tip': 'Pfeiltasten links/rechts funktionieren auch',
+    'rally.validate.accept': '✅ Sicher',
+    'rally.validate.reject': '❌ Verwerfen',
     
     // Rally Status
     'rally.status.accepted': '✅ Sicher',
@@ -180,11 +183,14 @@ export const translations = {
     'rally.keep': '✅ Keep',
     'rally.reject': '❌ Reject Rally',
     'rally.no_clip': 'No clip',
-    'rally.highlight.set': '⭐ Set Highlight',
+    'rally.highlight.set': '⭐ Remove Highlight',
     'rally.highlight.mark': '☆ Mark as Highlight',
+    'rally.highlight.remove': '⭐ Remove Highlight',
     'rally.step_back': '⏪ -100ms',
     'rally.step_forward': '+100ms ⏩',
     'rally.keyboard_tip': 'Arrow keys left/right also work',
+    'rally.validate.accept': '✅ Confirm',
+    'rally.validate.reject': '❌ Reject',
     
     // Rally Status
     'rally.status.accepted': '✅ Confirmed',
