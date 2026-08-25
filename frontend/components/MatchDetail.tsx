@@ -207,6 +207,9 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
   const [autoPlayQueue, setAutoPlayQueue] = useState(false);
   const [filterMode, setFilterMode] = useState<"all" | "highlights" | "accepted" | "rejected">("all");
   const [localRallies, setLocalRallies] = useState<Rally[]>(rallies);
+  const [playbackRate, setPlaybackRate] = useState(1.0);
+  const [loopEnabled, setLoopEnabled] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [form, setForm] = useState({
     custom_title: match.custom_title || "",
     match_date: match.match_date?.slice(0, 10) || "",
@@ -263,23 +266,124 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
     }
   };
 
-  const handleRallyClick = (rally: Rally) => {
+  const handleRallyClick = (rally: Rally, skipScroll: boolean = false) => {
     setCurrentRally(rally);
+    // Auto-scroll to video player element (only on manual clicks, not auto-play)
+    if (!skipScroll) {
+      setTimeout(() => {
+        const videoElement = document.querySelector('video');
+        if (videoElement) {
+          videoElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 50);
+    }
+  };
+
+  const navigateToRally = (direction: 'prev' | 'next') => {
+    if (!currentRally) return;
+    
+    // First try to find current rally in displayed rallies
+    let currentIndex = displayedRallies.findIndex(r => r.id === currentRally.id);
+    
+    // If not found (e.g., status changed and filtered out), use allRallies for navigation
+    if (currentIndex === -1) {
+      const sortedAllRallies = [...allRallies].sort((a, b) => a.start_time - b.start_time);
+      const currentAllIndex = sortedAllRallies.findIndex(r => r.id === currentRally.id);
+      if (currentAllIndex === -1) return;
+      
+      const newAllIndex = direction === 'prev' ? currentAllIndex - 1 : currentAllIndex + 1;
+      if (newAllIndex >= 0 && newAllIndex < sortedAllRallies.length) {
+        handleRallyClick(sortedAllRallies[newAllIndex], true);
+      }
+      return;
+    }
+    
+    const newIndex = direction === 'prev' ? currentIndex - 1 : currentIndex + 1;
+    if (newIndex >= 0 && newIndex < displayedRallies.length) {
+      handleRallyClick(displayedRallies[newIndex], true);
+    }
   };
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!currentRally || !videoRef.current) return;
-      if (event.key === "ArrowLeft") {
+      
+      // Don't trigger shortcuts when typing in textarea
+      if (event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement) {
+        return;
+      }
+      
+      // Prevent video controls from receiving spacebar
+      if (event.key === " ") {
         event.preventDefault();
-        stepVideo(-0.1);
-      } else if (event.key === "ArrowRight") {
-        event.preventDefault();
-        stepVideo(0.1);
+        event.stopPropagation();
+        if (videoRef.current.paused) {
+          videoRef.current.play();
+        } else {
+          videoRef.current.pause();
+        }
+        return;
+      }
+      
+      switch (event.key) {
+        case "ArrowLeft":
+          if (event.ctrlKey || event.metaKey) {
+            event.preventDefault();
+            navigateToRally('prev');
+          } else {
+            event.preventDefault();
+            stepVideo(-0.01);
+          }
+          break;
+        case "ArrowRight":
+          if (event.ctrlKey || event.metaKey) {
+            event.preventDefault();
+            navigateToRally('next');
+          } else {
+            event.preventDefault();
+            stepVideo(0.01);
+          }
+          break;
+        case "h":
+        case "H":
+          event.preventDefault();
+          toggleHighlight(currentRally.id, currentRally.user_marked_highlight);
+          break;
+        case "r":
+        case "R":
+          event.preventDefault();
+          const newStatus = currentRally.validation_status === "rejected" ? "accepted" : "rejected";
+          updateRallyStatus(currentRally.id, newStatus);
+          break;
+        case "n":
+        case "N":
+          event.preventDefault();
+          const notesElement = document.querySelector("textarea[placeholder*='Rückhand']") as HTMLTextAreaElement;
+          if (notesElement) {
+            notesElement.focus();
+          }
+          break;
+        case "l":
+        case "L":
+          event.preventDefault();
+          setLoopEnabled(prev => !prev);
+          break;
+        case "1":
+        case "2":
+        case "3":
+        case "4":
+          event.preventDefault();
+          const speeds: Record<string, number> = { "1": 0.25, "2": 0.5, "3": 1.0, "4": 1.5 };
+          const newSpeed = speeds[event.key];
+          setPlaybackRate(newSpeed);
+          if (videoRef.current) videoRef.current.playbackRate = newSpeed;
+          break;
       }
     };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    
+    // Use capture phase to intercept before video controls
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, [currentRally]);
 
   const saveMetadata = async () => {
@@ -420,7 +524,7 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
         <div>
           <h2 className="text-2xl font-bold">{match.original_filename}</h2>
           <p className="text-gray-400 text-sm mt-1">
-            Status: {match.status} | Dauer: {match.duration ? `${Math.floor(match.duration)}s` : "-"}
+            {t(language, 'common.status')}: {match.status} | {t(language, 'match.detail.duration')}: {match.duration ? `${Math.floor(match.duration)}s` : "-"}
           </p>
         </div>
         
@@ -428,49 +532,52 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
           onClick={onRefresh}
           className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm"
         >
-          🔄 Aktualisieren
+          🔄 {t(language, 'common.refresh')}
         </button>
       </div>
 
       <section className="rounded-2xl border border-white/10 bg-white/[0.06] p-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-widest text-blue-300">Match details</p>
-            <h3 className="mt-1 text-lg font-semibold">Match-Metadaten</h3>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-widest text-blue-300">Match details</p>
+              <h3 className="mt-1 text-lg font-semibold">{t(language, 'match.detail.metadata')}</h3>
+            </div>
+            <button onClick={() => setEditing(!editing)} className="rounded-lg bg-white/[0.08] px-3 py-2 text-sm text-slate-300 hover:bg-white/[0.14]">
+              {editing ? t(language, 'match.detail.cancel') : t(language, 'match.detail.edit')}
+            </button>
           </div>
-          <button onClick={() => setEditing(!editing)} className="rounded-lg bg-white/[0.08] px-3 py-2 text-sm text-slate-300 hover:bg-white/[0.14]">
-            {editing ? "Abbrechen" : "Bearbeiten"}
-          </button>
-        </div>
         {editing ? (
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <label className="text-sm text-slate-400 sm:col-span-2">
-              <span className="block mb-1">Titel (optional)</span>
+              <span className="block mb-1">{t(language, 'match.detail.title')}</span>
               <input 
                 type="text" 
                 value={form.custom_title} 
                 onChange={(event) => setForm({ ...form, custom_title: event.target.value })} 
                 className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-white outline-none focus:border-blue-400" 
-                placeholder="z.B. Training vs. Roboter oder Turnierfinale 2026"
+                placeholder={t(language, 'match.detail.title_placeholder')}
               />
             </label>
-            {[["match_date", "Datum", "date"], ["player_name", "Eigener Name", "text"], ["opponent_name", "Gegner", "text"], ["score", "Spielstand", "text"]].map(([key, label, type]) => (
+            {[["match_date", t(language, 'match.detail.date'), "date"], ["player_name", t(language, 'match.detail.player'), "text"], ["opponent_name", t(language, 'match.detail.opponent'), "text"], ["score", t(language, 'match.detail.score'), "text"]].map(([key, label, type]) => (
               <label key={key} className="text-sm text-slate-400">
                 <span className="block mb-1">{label}</span>
                 <input type={type} value={form[key as keyof typeof form]} onChange={(event) => setForm({ ...form, [key]: event.target.value })} className="w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-white outline-none focus:border-blue-400" />
               </label>
             ))}
             <label className="text-sm text-slate-400">
-              <span className="block mb-1">Resultat</span>
+              <span className="block mb-1">{t(language, 'match.detail.result_label')}</span>
               <select value={form.result} onChange={(event) => setForm({ ...form, result: event.target.value })} className="mt-1 w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-white">
-                <option value="unknown">Unbekannt</option><option value="win">Sieg</option><option value="loss">Niederlage</option><option value="draw">Unentschieden</option>
+                <option value="unknown">{language === 'de' ? 'Unbekannt' : 'Unknown'}</option>
+                <option value="win">{language === 'de' ? 'Sieg' : 'Win'}</option>
+                <option value="loss">{language === 'de' ? 'Niederlage' : 'Loss'}</option>
+                <option value="draw">{language === 'de' ? 'Unentschieden' : 'Draw'}</option>
               </select>
             </label>
             <label className="text-sm text-slate-400 sm:col-span-2">
-              <span className="block mb-1">Notizen</span>
+              <span className="block mb-1">{t(language, 'match.detail.notes')}</span>
               <textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} rows={3} className="mt-1 w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-white outline-none focus:border-blue-400" />
             </label>
-            <button onClick={saveMetadata} disabled={saving} className="rounded-lg bg-blue-500 px-4 py-2 font-semibold text-white hover:bg-blue-400 disabled:opacity-50 sm:col-span-2">{saving ? "Speichere..." : "Metadaten speichern"}</button>
+            <button onClick={saveMetadata} disabled={saving} className="rounded-lg bg-blue-500 px-4 py-2 font-semibold text-white hover:bg-blue-400 disabled:opacity-50 sm:col-span-2">{saving ? (language === 'de' ? 'Speichere...' : 'Saving...') : t(language, 'match.detail.save')}</button>
           </div>
         ) : (
           <div className="mt-4 space-y-2">
@@ -478,10 +585,10 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
               <div className="text-lg font-semibold text-white">{match.custom_title}</div>
             )}
             <div className="grid gap-3 text-sm text-slate-300 sm:grid-cols-4">
-              <span><b className="block text-xs text-slate-500">Spieler</b>{match.player_name || "-"}</span>
-              <span><b className="block text-xs text-slate-500">Gegner</b>{match.opponent_name || "-"}</span>
-              <span><b className="block text-xs text-slate-500">Resultat</b>{match.result === "win" ? "🟢 Sieg" : match.result === "loss" ? "🔴 Niederlage" : match.result === "draw" ? "🟡 Unentschieden" : "-"}</span>
-              <span><b className="block text-xs text-slate-500">Spielstand</b>{match.score || "-"}</span>
+              <span><b className="block text-xs text-slate-500">{t(language, 'match.detail.player_label')}</b>{match.player_name || "-"}</span>
+              <span><b className="block text-xs text-slate-500">{t(language, 'match.detail.opponent_label')}</b>{match.opponent_name || "-"}</span>
+              <span><b className="block text-xs text-slate-500">{t(language, 'match.detail.result_label')}</b>{match.result === "win" ? t(language, 'match.detail.win') : match.result === "loss" ? t(language, 'match.detail.loss') : match.result === "draw" ? t(language, 'match.detail.draw') : "-"}</span>
+              <span><b className="block text-xs text-slate-500">{t(language, 'match.detail.score_label')}</b>{match.score || "-"}</span>
             </div>
           </div>
         )}
@@ -584,6 +691,24 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
           {currentRally && currentRally.clip_filename && (
             <div className="rounded-2xl bg-white/[0.06] p-4 border border-white/10">
               <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => navigateToRally('prev')}
+                    disabled={displayedRallies.findIndex(r => r.id === currentRally.id) === 0}
+                    className="rounded-lg bg-white/[0.08] px-3 py-1.5 text-sm text-slate-300 hover:bg-white/[0.14] disabled:opacity-30 disabled:cursor-not-allowed"
+                    title={language === 'de' ? 'Vorherige Rally [Strg+←]' : 'Previous rally [Ctrl+Left]'}
+                  >
+                    ⏮ {language === 'de' ? 'Zurück' : 'Back'}
+                  </button>
+                  <button
+                    onClick={() => navigateToRally('next')}
+                    disabled={displayedRallies.findIndex(r => r.id === currentRally.id) === displayedRallies.length - 1}
+                    className="rounded-lg bg-white/[0.08] px-3 py-1.5 text-sm text-slate-300 hover:bg-white/[0.14] disabled:opacity-30 disabled:cursor-not-allowed"
+                    title={language === 'de' ? 'Nächste Rally [Strg+→]' : 'Next rally [Ctrl+Right]'}
+                  >
+                    {language === 'de' ? 'Weiter' : 'Next'} ⏭
+                  </button>
+                </div>
                 <h3 className="text-lg font-semibold">
                   Rally {getRallyNumber(currentRally.id)} ({formatTime(currentRally.duration)})
                 </h3>
@@ -592,11 +717,14 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
                     onClick={() => updateRallyStatus(currentRally.id, currentRally.validation_status === "rejected" ? "accepted" : "rejected")}
                     className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
                       currentRally.validation_status === "rejected" 
-                        ? "bg-emerald-500 text-black hover:bg-emerald-400" 
-                        : "bg-red-500/20 text-red-300 hover:bg-red-500/30"
+                        ? "bg-red-500/20 text-red-300 hover:bg-red-500/30" 
+                        : "bg-emerald-500 text-black hover:bg-emerald-400"
                     }`}
+                    title={language === 'de' ? 'Status ändern: Sicher ↔ Entfernt [R]' : 'Toggle status: Confirm ↔ Reject [R]'}
                   >
-                    {currentRally.validation_status === "rejected" ? t(language, 'rally.validate.accept') : t(language, 'rally.validate.reject')}
+                    {currentRally.validation_status === "rejected" 
+                      ? (language === 'de' ? '❌ Entfernt' : '❌ Reject') 
+                      : (language === 'de' ? '✅ Sicher' : '✅ Confirm')}
                   </button>
                   <button
                     onClick={() => toggleHighlight(currentRally.id, currentRally.user_marked_highlight)}
@@ -605,6 +733,7 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
                         ? "bg-yellow-500 text-black hover:bg-yellow-400" 
                         : "bg-white/[0.08] text-slate-300 hover:bg-white/[0.14]"
                     }`}
+                    title="Highlight umschalten [H]"
                   >
                     {currentRally.user_marked_highlight ? t(language, 'rally.highlight.remove') : t(language, 'rally.highlight.mark')}
                   </button>
@@ -615,31 +744,82 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
                 src={`http://localhost:8000/api/clips/${currentRally.clip_filename}`}
                 controls
                 autoPlay
+                loop={loopEnabled}
                 className="w-full max-h-96 rounded"
-                onPlay={() => onClipPlayStart?.()}
-                onPause={() => onClipPlayEnd?.()}
+                onPlay={() => {
+                  onClipPlayStart?.();
+                  setIsPlaying(true);
+                }}
+                onPause={() => {
+                  onClipPlayEnd?.();
+                  setIsPlaying(false);
+                }}
                 onEnded={() => {
                   onClipPlayEnd?.();
-                  if (autoPlayQueue) {
+                  setIsPlaying(false);
+                  if (autoPlayQueue && !loopEnabled) {
                     const currentIndex = displayedRallies.findIndex(r => r.id === currentRally.id);
                     const nextRally = displayedRallies[currentIndex + 1];
-                    if (nextRally) handleRallyClick(nextRally);
+                    if (nextRally) handleRallyClick(nextRally, true);
                   }
                 }}
                 onLoadedMetadata={(e) => {
                   const video = e.currentTarget;
-                  video.playbackRate = 1.0;
+                  video.playbackRate = playbackRate;
                 }}
               />
-              <div className="mt-3 flex items-center gap-2">
-                <button onClick={() => stepVideo(-0.1)} className="rounded bg-white/[0.08] px-3 py-1.5 text-xs text-slate-300 hover:bg-white/[0.14]">{t(language, 'rally.step_back')}</button>
-                <button onClick={() => stepVideo(0.1)} className="rounded bg-white/[0.08] px-3 py-1.5 text-xs text-slate-300 hover:bg-white/[0.14]">{t(language, 'rally.step_forward')}</button>
-                <span className="ml-auto text-xs text-slate-500">{t(language, 'rally.keyboard_tip')}</span>
+              <div className="mt-3 flex items-center gap-2 flex-wrap">
+                <button 
+                  onClick={() => {
+                    if (!videoRef.current) return;
+                    if (videoRef.current.paused) {
+                      videoRef.current.play();
+                    } else {
+                      videoRef.current.pause();
+                    }
+                  }} 
+                  className="rounded bg-white/[0.08] px-3 py-1.5 text-xs text-slate-300 hover:bg-white/[0.14]"
+                  title={language === 'de' ? 'Wiedergabe starten/pausieren [Leertaste]' : 'Play/Pause video [Space]'}
+                >
+                  {isPlaying 
+                    ? (language === 'de' ? '⏸ Pause' : '⏸ Pause') 
+                    : (language === 'de' ? '▶ Play' : '▶ Play')}
+                </button>
+                <div className="flex items-center gap-1">
+                  {[0.25, 0.5, 1.0, 1.5].map((speed) => (
+                    <button
+                      key={speed}
+                      onClick={() => {
+                        setPlaybackRate(speed);
+                        if (videoRef.current) videoRef.current.playbackRate = speed;
+                      }}
+                      className={`rounded px-2.5 py-1.5 text-sm font-medium transition-all ${
+                        playbackRate === speed 
+                          ? "bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg shadow-blue-500/30 scale-110" 
+                          : "bg-white/[0.08] text-slate-400 hover:bg-white/[0.14] hover:text-white"
+                      }`}
+                      title={`${speed}x Geschwindigkeit [${speed === 0.25 ? '1' : speed === 0.5 ? '2' : speed === 1.0 ? '3' : '4'}]`}
+                    >
+                      {speed === 1.0 ? "1x" : `${speed}x`}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={() => setLoopEnabled(prev => !prev)}
+                  className={`ml-auto rounded px-3 py-1.5 text-xs font-medium transition ${
+                    loopEnabled 
+                      ? "bg-purple-500 text-black" 
+                      : "bg-white/[0.08] text-slate-400 hover:bg-white/[0.14]"
+                  }`}
+                  title={language === 'de' ? 'Endlosschleife ein/aus [L]' : 'Loop on/off [L]'}
+                >
+                  🔁 {language === 'de' ? (loopEnabled ? 'Loop AN' : 'Loop AUS') : (loopEnabled ? 'Loop ON' : 'Loop OFF')}
+                </button>
               </div>
               
               <div className="mt-4">
                 <label className="text-sm text-slate-400 block mb-2">
-                  📝 {t(language, 'match.detail.notes')}
+                  📝 {t(language, 'match.detail.notes')} <span className="text-xs text-slate-500 ml-1">[N]</span>
                 </label>
                 <textarea
                   value={currentRally.notes || ""}
@@ -702,9 +882,11 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
                 <div
                   key={rally.id}
                   onClick={() => handleRallyClick(rally)}
-                  className={`p-3 border-b border-gray-700 cursor-pointer transition-colors
-                    ${currentRally?.id === rally.id ? "bg-blue-900/30" : "hover:bg-gray-700"}
-                    ${rally.is_highlight ? "bg-yellow-900/10" : ""}
+                  className={`p-3 border-l-4 cursor-pointer transition-colors
+                    ${currentRally?.id === rally.id 
+                      ? "bg-blue-900/40 border-blue-400" 
+                      : "border-transparent hover:bg-gray-700"}
+                    ${rally.user_marked_highlight && currentRally?.id !== rally.id ? "bg-yellow-900/10" : ""}
                   `}
                 >
                   <div className="flex items-center justify-between">
@@ -738,20 +920,14 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
                     
                     {rally.clip_filename ? (
                       <div className="flex items-center gap-3">
-                        <button className="text-blue-400 hover:text-blue-300 text-sm">{t(language, 'rally.play')}</button>
                         <button 
-                          onClick={(event) => { 
-                            event.stopPropagation(); 
-                            const newStatus = rally.validation_status === "rejected" ? "accepted" : "rejected";
-                            updateRallyStatus(rally.id, newStatus);
-                          }} 
-                          className={`text-xs px-2 py-1 rounded transition ${
-                            rally.validation_status === "rejected" 
-                              ? "bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30" 
-                              : "bg-red-500/20 text-red-300 hover:bg-red-500/30"
+                          className={`text-sm font-medium transition-all ${
+                            currentRally?.id === rally.id 
+                              ? "text-blue-300 scale-110" 
+                              : "text-blue-400 group-hover:text-white group-hover:scale-105"
                           }`}
                         >
-                          {rally.validation_status === "rejected" ? t(language, 'rally.keep') : t(language, 'rally.reject')}
+                          {t(language, 'rally.play')}
                         </button>
                         {rally.notes && (
                           <span className="text-xs text-slate-500" title={rally.notes}>📝</span>

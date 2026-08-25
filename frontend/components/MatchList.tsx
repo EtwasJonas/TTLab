@@ -17,6 +17,7 @@ interface Match {
   result: string | null;
   score: string | null;
   notes: string | null;
+  custom_title: string | null;
 }
 
 interface MatchListProps {
@@ -88,8 +89,9 @@ export default function MatchList({ matches, onSelectMatch, onDeleteMatch }: Mat
           >
             <div className="flex items-center justify-between">
               <div className="flex-1">
-                <div className="flex items-center gap-3 mb-2">
-                  <h3 className="font-semibold text-white">{match.original_filename}</h3>
+                <div className="flex items-center mb-2">
+                  <h3 className="font-semibold text-white">{match.custom_title || match.original_filename}</h3>
+                  <div style={{ minWidth: '10px' }}></div>
                   {getStatusBadge(match.status, language)}
                 </div>
                 <div className="flex items-center gap-4 text-sm text-gray-400">

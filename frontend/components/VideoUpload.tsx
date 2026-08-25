@@ -67,23 +67,27 @@ export default function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       <h2 className="text-xl font-semibold mb-4">{t(language, 'upload.analyze_title')}</h2>
       
       <div className="flex items-center gap-4">
-        <label className="flex-1">
+        <div className="flex-1 flex items-center gap-3">
           <input
             ref={fileInputRef}
             type="file"
             accept=".mp4,.avi,.mov,.mkv,.webm"
             onChange={handleFileChange}
             disabled={uploading}
-            className="block w-full text-sm text-gray-400
-              file:mr-4 file:py-2 file:px-4
-              file:rounded file:border-0
-              file:text-sm file:font-semibold
-              file:bg-blue-600 file:text-white
-              hover:file:bg-blue-700
-              disabled:file:opacity-50
-              cursor-pointer"
+            className="hidden"
           />
-        </label>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+          >
+            {language === 'de' ? '📁 Datei wählen' : '📁 Choose File'}
+          </button>
+          <span className="text-sm text-gray-400 truncate">
+            {fileInputRef.current?.files?.[0]?.name || (language === 'de' ? 'Keine Datei gewählt' : 'No file selected')}
+          </span>
+        </div>
         
         {uploading && (
           <span className="text-blue-400">{t(language, 'upload.uploading')}</span>

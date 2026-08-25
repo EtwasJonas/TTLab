@@ -92,7 +92,7 @@ async def upload_video(file: UploadFile = File(...)):
     return {
         "match_id": match.id,
         "filename": file.filename,
-        "message": "Video hochgeladen. Tisch markieren und Analyse starten."
+        "message": "Video uploaded. Mark table corners and start analysis."
     }
 
 

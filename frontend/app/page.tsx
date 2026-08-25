@@ -54,7 +54,6 @@ export default function Home() {
   const processingMatches = matches.filter((match) => match.status === "processing").length;
   const visibleMatches = matches.filter((match) => {
     if (libraryFilter === "all") return true;
-    if (libraryFilter === "processing") return match.status === "processing";
     if (!match.result || match.result === "unknown") return false;
     return match.result === libraryFilter;
   });
@@ -154,7 +153,7 @@ export default function Home() {
       <VideoUpload onUploadComplete={fetchMatches} />
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm text-slate-400">{language === 'de' ? 'Bibliothek filtern:' : 'Filter library:'}</span>
-        {[['all', t(language, 'match.filter.all')], ['win', t(language, 'match.filter.wins')], ['loss', t(language, 'match.filter.losses')], ['processing', language === 'de' ? 'In Arbeit' : 'In Progress']].map(([value, label]) => (
+        {[['all', t(language, 'match.filter.all')], ['win', t(language, 'match.filter.wins')], ['loss', t(language, 'match.filter.losses')], ['draw', t(language, 'match.filter.draws')]].map(([value, label]) => (
           <button
             key={value}
             onClick={() => setLibraryFilter(value)}
@@ -182,7 +181,10 @@ export default function Home() {
           match={selectedMatch} 
           rallies={rallies} 
           loading={loading}
-          onRefresh={() => fetchMatchDetails(selectedMatch.id)}
+          onRefresh={() => {
+            fetchMatchDetails(selectedMatch.id);
+            fetchMatches();
+          }}
           onStartAnalysis={() => startAnalysis(selectedMatch.id)}
           lastUpdated={lastUpdated}
           isPlayingClip={isPlayingClip}
