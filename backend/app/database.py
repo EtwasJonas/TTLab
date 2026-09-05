@@ -1,6 +1,5 @@
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy import text
-from sqlalchemy.orm import sessionmaker
 from app.models import Base
 import os
 from dotenv import load_dotenv
@@ -10,7 +9,7 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///../data/db/ttlab.db")
 
 engine = create_async_engine(DATABASE_URL, echo=False)
-async_session_maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
 
 
 async def init_db():

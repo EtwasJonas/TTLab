@@ -1,70 +1,21 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLanguage } from "../lib/LanguageContext";
 import { t } from "../lib/translations";
-
-interface Match {
-  id: number;
-  filename: string;
-  original_filename: string;
-  duration: number | null;
-  upload_date: string;
-  status: string;
-  error_message: string | null;
-  progress: number;
-  progress_message: string | null;
-  match_date: string | null;
-  player_name: string | null;
-  opponent_name: string | null;
-  result: string | null;
-  score: string | null;
-  notes: string | null;
-  table_points: string | null;
-  custom_title: string | null;
-}
-
-interface Rally {
-  id: number;
-  match_id: number;
-  start_time: number;
-  end_time: number;
-  duration: number;
-  clip_filename: string | null;
-  is_highlight: boolean;
-  highlight_score: number;
-  validation_status: "accepted" | "review" | "rejected";
-  confidence: number;
-  impact_count: number;
-  user_marked_highlight: boolean;
-  notes: string | null;
-}
+import { API_BASE } from "../lib/api";
+import type { Match, Rally, AnalysisMode } from "../lib/types";
 
 interface MatchDetailProps {
   match: Match;
   rallies: Rally[];
-  loading: boolean;
   onRefresh: () => void;
-  onStartAnalysis?: () => void;
+  onStartAnalysis?: (mode: AnalysisMode) => void;
   lastUpdated?: Date;
   isPlayingClip?: boolean;
   onClipPlayStart?: () => void;
   onClipPlayEnd?: () => void;
 }
-
-interface MatchDetailProps {
-  match: Match;
-  rallies: Rally[];
-  loading: boolean;
-  onRefresh: () => void;
-  onStartAnalysis?: () => void;
-  lastUpdated?: Date;
-  isPlayingClip?: boolean;
-  onClipPlayStart?: () => void;
-  onClipPlayEnd?: () => void;
-}
-
-const ACCEPTED_RALLIES_ONLY = false;
 
 function TableSetup({ match, onRefresh }: { match: Match; onRefresh: () => void }) {
   const { language } = useLanguage();
@@ -109,7 +60,7 @@ function TableSetup({ match, onRefresh }: { match: Match; onRefresh: () => void 
     if (points.length !== 4) return;
     setSaving(true);
     try {
-      const response = await fetch(`http://localhost:8000/api/matches/${match.id}`, {
+      const response = await fetch(`${API_BASE}/api/matches/${match.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ table_points: JSON.stringify(points) }),
@@ -133,7 +84,7 @@ function TableSetup({ match, onRefresh }: { match: Match; onRefresh: () => void 
         >
           <video
             ref={videoRef}
-            src={`http://localhost:8000/api/videos/${match.filename}`}
+            src={`${API_BASE}/api/videos/${match.filename}`}
             className="h-full w-full object-contain"
             preload="metadata"
             onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)}
@@ -198,8 +149,9 @@ const formatTime = (seconds: number) => {
   return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}.${ms.toString().padStart(2, "0")}`;
 };
 
-export default function MatchDetail({ match, rallies, loading, onRefresh, onStartAnalysis, lastUpdated, isPlayingClip, onClipPlayStart, onClipPlayEnd }: MatchDetailProps) {
+export default function MatchDetail({ match, rallies, onRefresh, onStartAnalysis, lastUpdated, isPlayingClip, onClipPlayStart, onClipPlayEnd }: MatchDetailProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const notesRef = useRef<HTMLTextAreaElement>(null);
   const [currentRally, setCurrentRally] = useState<Rally | null>(null);
   const { language } = useLanguage();
   const [editing, setEditing] = useState(false);
@@ -220,26 +172,50 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
     notes: match.notes || "",
   });
 
+  // Only resync the local rally state when the server data actually changed.
+  // Background polls deliver new array objects every few seconds; blindly
+  // copying them would discard local edits (e.g. notes being typed) and
+  // cause needless re-renders.
+  const ralliesSignature = useMemo(
+    () => rallies
+      .map(r => [r.id, r.start_time, r.end_time, r.duration, r.clip_filename ?? '', r.validation_status, r.user_marked_highlight, r.is_highlight, r.notes ?? ''].join(':'))
+      .join('|'),
+    [rallies]
+  );
+  const syncedSignature = useRef(ralliesSignature);
   useEffect(() => {
-    setLocalRallies(rallies);
-  }, [rallies]);
+    if (ralliesSignature !== syncedSignature.current) {
+      syncedSignature.current = ralliesSignature;
+      setLocalRallies(rallies);
+    }
+  }, [ralliesSignature, rallies]);
 
-  const getRallyNumber = (rallyId: number): number => {
-    const sortedRallies = [...allRallies].sort((a, b) => a.start_time - b.start_time);
-    const index = sortedRallies.findIndex(r => r.id === rallyId);
-    return index + 1;
-  };
+  // Compute rally numbers (per match, ordered by start time) once per data
+  // change instead of sorting the full list on every rendered row.
+  const rallyNumbers = useMemo(() => {
+    const map = new Map<number, number>();
+    [...localRallies]
+      .sort((a, b) => a.start_time - b.start_time)
+      .forEach((rally, index) => map.set(rally.id, index + 1));
+    return map;
+  }, [localRallies]);
+
+  const getRallyNumber = (rallyId: number): number => rallyNumbers.get(rallyId) ?? 0;
 
   // Treat legacy rallies without a status as accepted. Also show "review" rallies for manual checking.
-  const allRallies = localRallies.filter(r => {
+  const allRallies = useMemo(() => localRallies.filter(r => {
     const vs = r.validation_status as string | null | undefined;
     return vs == null || vs === "" || vs === "accepted" || vs === "review" || vs === "rejected";
-  });
-  
-  const displayedRallies = (() => {
+  }), [localRallies]);
+
+  // A rally counts as highlight when the user marked it OR the automatic
+  // detection classified it as one.
+  const isMarked = (r: Rally) => r.user_marked_highlight || r.is_highlight;
+
+  const displayedRallies = useMemo(() => {
     switch (filterMode) {
       case "highlights":
-        return allRallies.filter(r => r.user_marked_highlight);
+        return allRallies.filter(isMarked);
       case "accepted":
         return allRallies.filter(r => r.validation_status === "accepted" || r.validation_status === "review");
       case "rejected":
@@ -247,23 +223,20 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
       default:
         return allRallies;
     }
-  })();
+  }, [allRallies, filterMode]);
 
   const progress = Math.max(0, Math.min(100, match.progress ?? 0));
 
-  const handleStartAnalysis = async () => {
+  const handleStartAnalysis = (mode: AnalysisMode) => {
     if (onStartAnalysis) {
-      onStartAnalysis();
-    } else {
-      try {
-        const response = await fetch(`http://localhost:8000/api/matches/${match.id}/analyze`, { method: "POST" });
-        if (response.ok) {
-          onRefresh();
-        }
-      } catch (error) {
-        console.error("Fehler beim Starten der Analyse:", error);
-      }
+      onStartAnalysis(mode);
+      return;
     }
+    fetch(`${API_BASE}/api/matches/${match.id}/analyze?mode=${mode}`, { method: "POST" })
+      .then((response) => {
+        if (response.ok) onRefresh();
+      })
+      .catch((error) => console.error("Fehler beim Starten der Analyse:", error));
   };
 
   const handleRallyClick = (rally: Rally, skipScroll: boolean = false) => {
@@ -271,10 +244,7 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
     // Auto-scroll to video player element (only on manual clicks, not auto-play)
     if (!skipScroll) {
       setTimeout(() => {
-        const videoElement = document.querySelector('video');
-        if (videoElement) {
-          videoElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
+        videoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 50);
     }
   };
@@ -308,7 +278,7 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!currentRally || !videoRef.current) return;
       
-      // Don't trigger shortcuts when typing in textarea
+      // Don't trigger shortcuts when typing in form fields
       if (event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement) {
         return;
       }
@@ -325,43 +295,43 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
         return;
       }
       
+      // Read handlers from the ref so shortcuts always use the latest
+      // filter/navigation state instead of a stale closure.
+      const { navigateToRally: navigate, stepVideo: step, toggleHighlight: toggleHl, updateRallyStatus: updateStatus } = shortcutHandlers.current;
+      
       switch (event.key) {
         case "ArrowLeft":
           if (event.ctrlKey || event.metaKey) {
             event.preventDefault();
-            navigateToRally('prev');
+            navigate('prev');
           } else {
             event.preventDefault();
-            stepVideo(-0.01);
+            step(-0.01);
           }
           break;
         case "ArrowRight":
           if (event.ctrlKey || event.metaKey) {
             event.preventDefault();
-            navigateToRally('next');
+            navigate('next');
           } else {
             event.preventDefault();
-            stepVideo(0.01);
+            step(0.01);
           }
           break;
         case "h":
         case "H":
           event.preventDefault();
-          toggleHighlight(currentRally.id, currentRally.user_marked_highlight);
+          toggleHl(currentRally.id, currentRally.user_marked_highlight || currentRally.is_highlight);
           break;
         case "r":
         case "R":
           event.preventDefault();
-          const newStatus = currentRally.validation_status === "rejected" ? "accepted" : "rejected";
-          updateRallyStatus(currentRally.id, newStatus);
+          updateStatus(currentRally.id, currentRally.validation_status === "rejected" ? "accepted" : "rejected");
           break;
         case "n":
         case "N":
           event.preventDefault();
-          const notesElement = document.querySelector("textarea[placeholder*='Rückhand']") as HTMLTextAreaElement;
-          if (notesElement) {
-            notesElement.focus();
-          }
+          notesRef.current?.focus();
           break;
         case "l":
         case "L":
@@ -389,7 +359,7 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
   const saveMetadata = async () => {
     setSaving(true);
     try {
-      const response = await fetch(`http://localhost:8000/api/matches/${match.id}`, {
+      const response = await fetch(`${API_BASE}/api/matches/${match.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...form, match_date: form.match_date || null }),
@@ -403,7 +373,7 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
     }
   };
 
-  const updateRallyStatus = async (rallyId: number, newStatus: string) => {
+  const updateRallyStatus = async (rallyId: number, newStatus: Rally["validation_status"]) => {
     setLocalRallies(prev => prev.map(r => 
       r.id === rallyId ? { ...r, validation_status: newStatus } : r
     ));
@@ -413,7 +383,7 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
     }
     
     try {
-      await fetch(`http://localhost:8000/api/rallies/${rallyId}`, {
+      await fetch(`${API_BASE}/api/rallies/${rallyId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ validation_status: newStatus }),
@@ -442,7 +412,7 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
     }
     
     try {
-      await fetch(`http://localhost:8000/api/rallies/${rallyId}`, {
+      await fetch(`${API_BASE}/api/rallies/${rallyId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user_marked_highlight: newHighlightState }),
@@ -455,29 +425,37 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
     }
   };
 
-  const updateRallyNotes = async (rallyId: number, newNotes: string) => {
+  const notesSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const updateRallyNotes = (rallyId: number, newNotes: string) => {
     setLocalRallies(prev => prev.map(r => 
       r.id === rallyId ? { ...r, notes: newNotes } : r
     ));
     
-    try {
-      await fetch(`http://localhost:8000/api/rallies/${rallyId}`, {
+    // Debounce the PATCH request so typing doesn't fire one request per keystroke
+    if (notesSaveTimerRef.current) {
+      clearTimeout(notesSaveTimerRef.current);
+    }
+    notesSaveTimerRef.current = setTimeout(() => {
+      fetch(`${API_BASE}/api/rallies/${rallyId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ notes: newNotes }),
-      });
-    } catch (error) {
-      console.error("Failed to save notes:", error);
-    }
+      }).catch((error) => console.error("Failed to save notes:", error));
+    }, 600);
   };
+
+  useEffect(() => {
+    return () => {
+      if (notesSaveTimerRef.current) clearTimeout(notesSaveTimerRef.current);
+    };
+  }, []);
 
   const downloadAllClips = async () => {
     try {
-      // Try fast download first
-      const response = await fetch(`http://localhost:8000/api/matches/${match.id}/export-all-rallies-video?fast=true`);
+      const response = await fetch(`${API_BASE}/api/matches/${match.id}/export-all-rallies-video?fast=true`);
       if (!response.ok) throw new Error('Fast download failed');
       
-      // Create download link
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -487,18 +465,15 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
       window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error("Fast download failed, trying compatible mode:", error);
-      // Fallback to compatible mode
-      window.open(`http://localhost:8000/api/matches/${match.id}/export-all-rallies-video`, '_blank');
+      window.open(`${API_BASE}/api/matches/${match.id}/export-all-rallies-video`, '_blank');
     }
   };
 
   const downloadHighlights = async () => {
     try {
-      // Try fast download first
-      const response = await fetch(`http://localhost:8000/api/matches/${match.id}/export-highlights-video?fast=true`);
+      const response = await fetch(`${API_BASE}/api/matches/${match.id}/export-highlights-video?fast=true`);
       if (!response.ok) throw new Error('Fast download failed');
-      
-      // Create download link
+
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -508,8 +483,23 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
       window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error("Fast download failed, trying compatible mode:", error);
-      // Fallback to compatible mode
-      window.open(`http://localhost:8000/api/matches/${match.id}/export-highlights-video`, '_blank');
+      window.open(`${API_BASE}/api/matches/${match.id}/export-highlights-video`, '_blank');
+    }
+  };
+
+  const [reevaluating, setReevaluating] = useState(false);
+
+  const reevaluateHighlights = async () => {
+    setReevaluating(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/matches/${match.id}/reevaluate-highlights`, { method: "POST" });
+      if (response.ok) {
+        onRefresh();
+      }
+    } catch (error) {
+      console.error("Fehler bei der Highlight-Neubewertung:", error);
+    } finally {
+      setReevaluating(false);
     }
   };
 
@@ -517,6 +507,11 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
     if (!videoRef.current) return;
     videoRef.current.currentTime = Math.max(0, Math.min(videoRef.current.duration, videoRef.current.currentTime + seconds));
   };
+
+  // Keep the latest handler versions available to the keyboard shortcut
+  // listener (which only re-subscribes when the current rally changes).
+  const shortcutHandlers = useRef({ navigateToRally, stepVideo, toggleHighlight, updateRallyStatus });
+  shortcutHandlers.current = { navigateToRally, stepVideo, toggleHighlight, updateRallyStatus };
 
   return (
     <div className="space-y-6">
@@ -608,12 +603,27 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
             </div>
           </div>
           
-          <button
-            onClick={handleStartAnalysis}
-            className="w-full py-3 bg-blue-600 hover:bg-blue-500 rounded text-white font-semibold transition-colors"
-          >
-            {t(language, 'analysis.pending.start')}
-          </button>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <button
+              onClick={() => handleStartAnalysis("performance")}
+              className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 rounded text-white font-semibold transition-colors"
+              title={language === 'de' ? 'Nutzt alle CPU-Kerne für die schnellste Analyse – identische Erkennungsqualität' : 'Uses all CPU cores for the fastest analysis - identical detection quality'}
+            >
+              ⚡ {language === 'de' ? 'Analyse mit voller Leistung' : 'Full-speed analysis'}
+            </button>
+            <button
+              onClick={() => handleStartAnalysis("background")}
+              className="flex-1 py-3 bg-slate-700 hover:bg-slate-600 rounded text-white font-semibold transition-colors"
+              title={language === 'de' ? 'Weniger CPU-Kerne und reduzierte Bewegungsanalyse – der PC bleibt flüssig nutzbar' : 'Fewer CPU cores and reduced motion analysis - keeps your PC responsive'}
+            >
+              🌙 {language === 'de' ? 'Im Hintergrund analysieren' : 'Analyze in background'}
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 text-center">
+            {language === 'de'
+              ? 'Volle Leistung nutzt alle Kerne (schnellste Analyse, gleiche Qualität). Der Hintergrund-Modus schonet den PC für andere Aufgaben.'
+              : 'Full speed uses all cores (fastest analysis, same quality). Background mode keeps resources free for other tasks.'}
+          </p>
           </div>
         </div>
       )}
@@ -651,19 +661,6 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4 pt-2">
-            <div className="bg-white/[0.05] rounded-xl p-3">
-              <p className="text-xs text-gray-400">{t(language, 'analysis.detected_rallies')}</p>
-              <p className="text-2xl font-bold text-white">{rallies.length}</p>
-            </div>
-            <div className="bg-white/[0.05] rounded-xl p-3">
-              <p className="text-xs text-gray-400">{t(language, 'analysis.highlights')}</p>
-              <p className="text-2xl font-bold text-yellow-400">
-                {rallies.filter(r => r.is_highlight).length}
-              </p>
-            </div>
-          </div>
-
           {lastUpdated && (
             <p className="text-xs text-gray-500 text-center pt-2">
               {t(language, 'common.last_updated')}: {lastUpdated.toLocaleTimeString()}
@@ -682,10 +679,12 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
         </div>
       )}
 
-      {loading ? (
-        <div className="text-center py-8 text-gray-400">{t(language, 'common.loading')}...</div>
-      ) : rallies.length === 0 && match.status === "completed" ? (
+      {rallies.length === 0 && match.status === "completed" ? (
         <div className="text-center py-8 text-gray-400">{t(language, 'rally.no_rallies_detected')}</div>
+      ) : rallies.length === 0 ? (
+        // Nothing to show yet (pending/processing/failed) - the status
+        // sections above already communicate the current state.
+        null
       ) : (
         <>
           {currentRally && currentRally.clip_filename && (
@@ -727,21 +726,21 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
                       : (language === 'de' ? '✅ Sicher' : '✅ Confirm')}
                   </button>
                   <button
-                    onClick={() => toggleHighlight(currentRally.id, currentRally.user_marked_highlight)}
+                    onClick={() => toggleHighlight(currentRally.id, isMarked(currentRally))}
                     className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
-                      currentRally.user_marked_highlight 
-                        ? "bg-yellow-500 text-black hover:bg-yellow-400" 
+                      isMarked(currentRally)
+                        ? "bg-yellow-500 text-black hover:bg-yellow-400"
                         : "bg-white/[0.08] text-slate-300 hover:bg-white/[0.14]"
                     }`}
-                    title="Highlight umschalten [H]"
+                    title={language === 'de' ? 'Highlight umschalten [H]' : 'Toggle highlight [H]'}
                   >
-                    {currentRally.user_marked_highlight ? t(language, 'rally.highlight.remove') : t(language, 'rally.highlight.mark')}
+                    {isMarked(currentRally) ? t(language, 'rally.highlight.remove') : t(language, 'rally.highlight.mark')}
                   </button>
                 </div>
               </div>
               <video
                 ref={videoRef}
-                src={`http://localhost:8000/api/clips/${currentRally.clip_filename}`}
+                src={`${API_BASE}/api/clips/${currentRally.clip_filename}`}
                 controls
                 autoPlay
                 loop={loopEnabled}
@@ -781,9 +780,7 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
                   className="rounded bg-white/[0.08] px-3 py-1.5 text-xs text-slate-300 hover:bg-white/[0.14]"
                   title={language === 'de' ? 'Wiedergabe starten/pausieren [Leertaste]' : 'Play/Pause video [Space]'}
                 >
-                  {isPlaying 
-                    ? (language === 'de' ? '⏸ Pause' : '⏸ Pause') 
-                    : (language === 'de' ? '▶ Play' : '▶ Play')}
+                  {isPlaying ? "⏸ Pause" : "▶ Play"}
                 </button>
                 <div className="flex items-center gap-1">
                   {[0.25, 0.5, 1.0, 1.5].map((speed) => (
@@ -798,7 +795,7 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
                           ? "bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg shadow-blue-500/30 scale-110" 
                           : "bg-white/[0.08] text-slate-400 hover:bg-white/[0.14] hover:text-white"
                       }`}
-                      title={`${speed}x Geschwindigkeit [${speed === 0.25 ? '1' : speed === 0.5 ? '2' : speed === 1.0 ? '3' : '4'}]`}
+                      title={`${speed}x ${language === 'de' ? 'Geschwindigkeit' : 'speed'} [${speed === 0.25 ? '1' : speed === 0.5 ? '2' : speed === 1.0 ? '3' : '4'}]`}
                     >
                       {speed === 1.0 ? "1x" : `${speed}x`}
                     </button>
@@ -822,6 +819,7 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
                   📝 {t(language, 'match.detail.notes')} <span className="text-xs text-slate-500 ml-1">[N]</span>
                 </label>
                 <textarea
+                  ref={notesRef}
                   value={currentRally.notes || ""}
                   onChange={(e) => {
                     e.stopPropagation();
@@ -869,7 +867,17 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
                   ⭐ {language === 'de' ? 'Highlights' : 'Highlights'}
                 </button>
                 <button
-                  onClick={() => { setAutoPlayQueue(!autoPlayQueue); if (!autoPlayQueue && currentRally) { const video = document.querySelector("video"); if (video) video.play(); }}}
+                  onClick={reevaluateHighlights}
+                  disabled={reevaluating || match.status !== "completed"}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium transition bg-white/[0.08] text-slate-300 hover:bg-white/[0.14] disabled:opacity-40 disabled:cursor-not-allowed"
+                  title={language === 'de'
+                    ? 'Automatische Highlights anhand der aktuellen Erkennungsregeln neu bewerten (ohne neue Video-Analyse). Manuelle Markierungen bleiben erhalten.'
+                    : 'Re-classify automatic highlights with the current detection rules (no video re-analysis). Manual markings are kept.'}
+                >
+                  {reevaluating ? (language === 'de' ? '⏳ Bewerte...' : '⏳ Evaluating...') : (language === 'de' ? '🔄 Neu bewerten' : '🔄 Re-evaluate')}
+                </button>
+                <button
+                  onClick={() => { setAutoPlayQueue(!autoPlayQueue); if (!autoPlayQueue && currentRally) videoRef.current?.play(); }}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${autoPlayQueue ? "bg-emerald-500 text-black" : "bg-white/[0.08] text-slate-300 hover:bg-white/[0.14]"}`}
                 >
                   {autoPlayQueue ? t(language, 'rally.auto_play.on') : t(language, 'rally.auto_play.off')}
@@ -878,7 +886,7 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
             </div>
             
             <div className="max-h-96 overflow-y-auto">
-              {displayedRallies.map((rally, index) => (
+              {displayedRallies.map((rally) => (
                 <div
                   key={rally.id}
                   onClick={() => handleRallyClick(rally)}
@@ -886,7 +894,7 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
                     ${currentRally?.id === rally.id 
                       ? "bg-blue-900/40 border-blue-400" 
                       : "border-transparent hover:bg-gray-700"}
-                    ${rally.user_marked_highlight && currentRally?.id !== rally.id ? "bg-yellow-900/10" : ""}
+                    ${isMarked(rally) && currentRally?.id !== rally.id ? "bg-yellow-900/10" : ""}
                   `}
                 >
                   <div className="flex items-center justify-between">
@@ -901,7 +909,7 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
                         {formatTime(rally.duration)}
                       </span>
                       <div className="flex items-center gap-1.5">
-                        {rally.user_marked_highlight && (
+                        {isMarked(rally) && (
                           <span className="inline-flex items-center gap-1 rounded-md bg-yellow-500/10 px-2 py-0.5 text-xs font-medium text-yellow-400 whitespace-nowrap">
                             {t(language, 'rally.highlight')}
                           </span>
@@ -924,7 +932,7 @@ export default function MatchDetail({ match, rallies, loading, onRefresh, onStar
                           className={`text-sm font-medium transition-all ${
                             currentRally?.id === rally.id 
                               ? "text-blue-300 scale-110" 
-                              : "text-blue-400 group-hover:text-white group-hover:scale-105"
+                              : "text-blue-400"
                           }`}
                         >
                           {t(language, 'rally.play')}

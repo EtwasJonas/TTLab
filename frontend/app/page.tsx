@@ -6,47 +6,14 @@ import MatchList from "@/components/MatchList";
 import MatchDetail from "@/components/MatchDetail";
 import { useLanguage } from "../lib/LanguageContext";
 import { t } from "../lib/translations";
-
-interface Match {
-  id: number;
-  filename: string;
-  original_filename: string;
-  duration: number | null;
-  upload_date: string;
-  status: string;
-  error_message: string | null;
-  progress: number;
-  progress_message: string | null;
-  match_date: string | null;
-  player_name: string | null;
-  opponent_name: string | null;
-  result: string | null;
-  score: string | null;
-  notes: string | null;
-  table_points: string | null;
-}
-
-interface Rally {
-  id: number;
-  match_id: number;
-  start_time: number;
-  end_time: number;
-  duration: number;
-  clip_filename: string | null;
-  is_highlight: boolean;
-  highlight_score: number;
-  validation_status: "accepted" | "review" | "rejected";
-  confidence: number;
-  impact_count: number;
-  user_marked_highlight: boolean;
-}
+import { apiUrl } from "../lib/api";
+import type { Match, Rally, AnalysisMode } from "../lib/types";
 
 export default function Home() {
   const { language } = useLanguage();
   const [matches, setMatches] = useState<Match[]>([]);
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
   const [rallies, setRallies] = useState<Rally[]>([]);
-  const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [isPlayingClip, setIsPlayingClip] = useState(false);
   const [libraryFilter, setLibraryFilter] = useState("all");
@@ -60,7 +27,7 @@ export default function Home() {
 
   const fetchMatches = async () => {
     try {
-      const response = await fetch("http://localhost:8000/api/matches");
+      const response = await fetch(apiUrl("/api/matches"));
       if (response.ok) {
         const data = await response.json();
         setMatches(data);
@@ -70,16 +37,18 @@ export default function Home() {
     }
   };
 
+  // Background refresh: keeps the data current without a loading state, so
+  // React only updates the changed numbers in place instead of replacing
+  // the whole page content with a "loading" placeholder.
   const fetchMatchDetails = async (matchId: number) => {
-    setLoading(true);
     try {
-      const rallyResponse = await fetch(`http://localhost:8000/api/matches/${matchId}/rallies`);
+      const rallyResponse = await fetch(apiUrl(`/api/matches/${matchId}/rallies`));
       if (rallyResponse.ok) {
         const data = await rallyResponse.json();
         setRallies(data.rallies);
       }
       
-      const matchResponse = await fetch(`http://localhost:8000/api/matches/${matchId}`);
+      const matchResponse = await fetch(apiUrl(`/api/matches/${matchId}`));
       if (matchResponse.ok) {
         const matchData = await matchResponse.json();
         setSelectedMatch(matchData);
@@ -87,14 +56,12 @@ export default function Home() {
       }
     } catch (error) {
       console.error("Fehler beim Laden der Match-Details:", error);
-    } finally {
-      setLoading(false);
     }
   };
 
-  const startAnalysis = async (matchId: number) => {
+  const startAnalysis = async (matchId: number, mode: AnalysisMode) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/matches/${matchId}/analyze`, { method: "POST" });
+      const response = await fetch(apiUrl(`/api/matches/${matchId}/analyze?mode=${mode}`), { method: "POST" });
       if (response.ok) {
         setTimeout(() => fetchMatchDetails(matchId), 1000);
       }
@@ -105,7 +72,7 @@ export default function Home() {
 
   const deleteMatch = async (matchId: number) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/matches/${matchId}`, { method: "DELETE" });
+      const response = await fetch(apiUrl(`/api/matches/${matchId}`), { method: "DELETE" });
       if (response.ok) {
         fetchMatches();
         if (selectedMatch?.id === matchId) {
@@ -122,14 +89,25 @@ export default function Home() {
     fetchMatches();
   }, []);
 
+  // Keep the dashboard counters ("Analysiert"/"Aktiv") live while any
+  // analysis runs - also when the user is not viewing that match.
+  const anyMatchProcessing = matches.some((match) => match.status === "processing");
   useEffect(() => {
-    if (selectedMatch && selectedMatch.status === "processing" && !isPlayingClip) {
-      const refreshInterval = setInterval(() => {
-        fetchMatchDetails(selectedMatch.id);
-      }, 3000);
-      return () => clearInterval(refreshInterval);
-    }
-  }, [selectedMatch, isPlayingClip]);
+    if (!anyMatchProcessing) return;
+    const statsInterval = setInterval(fetchMatches, 3000);
+    return () => clearInterval(statsInterval);
+  }, [anyMatchProcessing]);
+
+  // Re-create the polling interval only when the relevant match state changes,
+  // not on every poll response (selectedMatch is a new object each time).
+  const pollingMatchId = selectedMatch?.status === "processing" && !isPlayingClip ? selectedMatch.id : null;
+  useEffect(() => {
+    if (pollingMatchId === null) return;
+    const refreshInterval = setInterval(() => {
+      fetchMatchDetails(pollingMatchId);
+    }, 1000);
+    return () => clearInterval(refreshInterval);
+  }, [pollingMatchId]);
 
   return (
     <div className="space-y-8">
@@ -180,12 +158,11 @@ export default function Home() {
         <MatchDetail 
           match={selectedMatch} 
           rallies={rallies} 
-          loading={loading}
           onRefresh={() => {
             fetchMatchDetails(selectedMatch.id);
             fetchMatches();
           }}
-          onStartAnalysis={() => startAnalysis(selectedMatch.id)}
+          onStartAnalysis={(mode) => startAnalysis(selectedMatch.id, mode)}
           lastUpdated={lastUpdated}
           isPlayingClip={isPlayingClip}
           onClipPlayStart={() => setIsPlayingClip(true)}

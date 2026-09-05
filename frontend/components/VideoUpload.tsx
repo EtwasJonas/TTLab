@@ -3,6 +3,7 @@
 import { useState, useRef } from "react";
 import { useLanguage } from "../lib/LanguageContext";
 import { t } from "../lib/translations";
+import { apiUrl } from "../lib/api";
 
 interface VideoUploadProps {
   onUploadComplete: () => void;
@@ -37,7 +38,7 @@ export default function VideoUpload({ onUploadComplete }: VideoUploadProps) {
     formData.append("file", file);
 
     try {
-      const response = await fetch("http://localhost:8000/api/upload", {
+      const response = await fetch(apiUrl("/api/upload"), {
         method: "POST",
         body: formData,
       });

@@ -2,45 +2,30 @@ export type Language = 'de' | 'en';
 
 export const translations = {
   de: {
-    // Navigation & Header
-    'nav.dashboard': 'Dashboard',
-    'nav.matches': 'Matches',
-    'nav.settings': 'Einstellungen',
-    'lang.switch': 'EN',
-    
     // Dashboard
-    'dashboard.title': 'TTLab Dashboard',
     'dashboard.total_matches': 'Matches',
     'dashboard.analyzed': 'Analysiert',
     'dashboard.active': 'Aktiv',
-    'dashboard.highlights': 'Highlights',
-    'dashboard.upload_video': 'Video hochladen',
     
     // Match List
-    'match.list.title': 'Alle Matches',
     'match.filter.all': 'Alle',
     'match.filter.wins': 'Siege',
     'match.filter.losses': 'Niederlagen',
     'match.filter.draws': 'Unentschieden',
-    'match.no_matches': 'Keine Matches gefunden',
-    'match.delete': 'Löschen',
-    'match.analyze': 'Analysieren',
     
     // Match Detail
-    'match.detail.title': 'Match-Details',
     'match.detail.player': 'Eigener Name',
     'match.detail.opponent': 'Gegner',
-    'match.detail.result': 'Ergebnis',
     'match.detail.score': 'Spielstand',
     'match.detail.date': 'Datum',
     'match.detail.notes': 'Notizen',
-    'match.detail.title': 'Titel (optional)',
-    'match.detail.title_placeholder': 'z.B. Training vs. Roboter oder Turnierfinale 2026',
     'match.detail.edit': 'Bearbeiten',
     'match.detail.save': 'Metadaten speichern',
     'match.detail.cancel': 'Abbrechen',
     'match.detail.duration': 'Dauer',
     'match.detail.metadata': 'Match-Metadaten',
+    'match.detail.title': 'Titel (optional)',
+    'match.detail.title_placeholder': 'z.B. Training vs. Roboter oder Turnierfinale 2026',
     'match.detail.player_label': 'Spieler',
     'match.detail.opponent_label': 'Gegner',
     'match.detail.result_label': 'Resultat',
@@ -64,12 +49,9 @@ export const translations = {
     // Analysis Status
     'analysis.pending.title': 'Analyse noch nicht gestartet',
     'analysis.pending.description': 'Das Video wurde hochgeladen, aber die Analyse wurde noch nicht gestartet.',
-    'analysis.pending.start': '▶️ Analyse jetzt starten',
     'analysis.processing.title': 'Video wird analysiert',
     'analysis.processing.message': 'Analyse läuft...',
     'analysis.progress': 'Fortschritt',
-    'analysis.detected_rallies': 'Erkannte Rallys',
-    'analysis.highlights': 'Highlights',
     'analysis.tip': 'Die Analyse läuft im Hintergrund. Du kannst diese Seite verlassen und später zurückkommen.',
     'analysis.failed': '❌ Analyse fehlgeschlagen:',
     
@@ -83,24 +65,15 @@ export const translations = {
     'rally.auto_play.on': '▶ Auto-Play AN',
     'rally.auto_play.off': '⏸ Auto-Play AUS',
     'rally.play': '▶ Abspielen',
-    'rally.keep': '✅ Behalten',
-    'rally.reject': '❌ Kein Ballwechsel',
     'rally.no_clip': 'Kein Clip',
-    'rally.highlight.set': '⭐ Highlight entfernen',
     'rally.highlight.mark': '☆ Als Highlight markieren',
     'rally.highlight.remove': '⭐ Highlight entfernen',
-    'rally.step_back': '⏪ -100ms',
-    'rally.step_forward': '+100ms ⏩',
-    'rally.keyboard_tip': 'Pfeiltasten links/rechts funktionieren auch',
-    'rally.validate.accept': '✅ Sicher',
-    'rally.validate.reject': '❌ Verwerfen',
     
     // Rally Status
     'rally.status.accepted': '✅ Sicher',
     'rally.status.review': '⚠️ Prüfen',
     'rally.status.rejected': '❌ Verworfen',
     'rally.highlight': '⭐ Highlight',
-    'rally.shortcuts.tip': 'Shortcuts: [Leertaste] Play/Pause • [H] Highlight • [A] Sicher • [R] Verwerfen • [N] Notizen • [L] Loop • [1-4] Speed',
     'shortcuts.title': 'Tastaturkürzel',
     'shortcuts.play_pause': 'Wiedergabe starten/pausieren',
     'shortcuts.prev_rally': 'Vorherige Rally',
@@ -118,20 +91,12 @@ export const translations = {
     'shortcuts.tip': 'Hinweis: Shortcuts funktionieren nur, wenn das Video ausgewählt ist und nicht im Notiz-Feld getippt wird.',
     
     // Upload
-    'upload.title': 'Video hochladen',
     'upload.analyze_title': 'Neues Video analysieren',
-    'upload.drag_drop': 'Video hierher ziehen oder klicken zum Auswählen',
-    'upload.supported_formats': 'Unterstützte Formate: MP4, AVI, MOV, MKV, WebM',
-    'upload.start': 'Upload starten',
     'upload.uploading': '⏳ Wird hochgeladen...',
     
     // Common
-    'common.loading': 'Lade...',
-    'common.error': 'Fehler',
     'common.refresh': 'Aktualisieren',
     'common.back': '← Zurück',
-    'common.close': 'Schließen',
-    'common.duration': 'Dauer',
     'common.status': 'Status',
     'common.last_updated': 'Zuletzt aktualisiert',
     'common.tip': 'Tipp',
@@ -139,45 +104,30 @@ export const translations = {
   },
   
   en: {
-    // Navigation & Header
-    'nav.dashboard': 'Dashboard',
-    'nav.matches': 'Matches',
-    'nav.settings': 'Settings',
-    'lang.switch': 'DE',
-    
     // Dashboard
-    'dashboard.title': 'TTLab Dashboard',
     'dashboard.total_matches': 'Matches',
     'dashboard.analyzed': 'Analyzed',
     'dashboard.active': 'Active',
-    'dashboard.highlights': 'Highlights',
-    'dashboard.upload_video': 'Upload Video',
     
     // Match List
-    'match.list.title': 'All Matches',
     'match.filter.all': 'All',
     'match.filter.wins': 'Wins',
     'match.filter.losses': 'Losses',
     'match.filter.draws': 'Draws',
-    'match.no_matches': 'No matches found',
-    'match.delete': 'Delete',
-    'match.analyze': 'Analyze',
     
     // Match Detail
-    'match.detail.title': 'Match Details',
     'match.detail.player': 'Player Name',
     'match.detail.opponent': 'Opponent',
-    'match.detail.result': 'Result',
     'match.detail.score': 'Score',
     'match.detail.date': 'Date',
     'match.detail.notes': 'Notes',
-    'match.detail.title': 'Title (optional)',
-    'match.detail.title_placeholder': 'e.g. Training vs. Robot or Tournament Final 2026',
     'match.detail.edit': 'Edit',
     'match.detail.save': 'Save metadata',
     'match.detail.cancel': 'Cancel',
     'match.detail.duration': 'Duration',
     'match.detail.metadata': 'Match Metadata',
+    'match.detail.title': 'Title (optional)',
+    'match.detail.title_placeholder': 'e.g. Training vs. Robot or Tournament Final 2026',
     'match.detail.player_label': 'Player',
     'match.detail.opponent_label': 'Opponent',
     'match.detail.result_label': 'Result',
@@ -201,12 +151,9 @@ export const translations = {
     // Analysis Status
     'analysis.pending.title': 'Analysis not started',
     'analysis.pending.description': 'The video has been uploaded, but analysis hasn\'t started yet.',
-    'analysis.pending.start': '▶️ Start Analysis Now',
     'analysis.processing.title': 'Analyzing video',
     'analysis.processing.message': 'Analysis in progress...',
     'analysis.progress': 'Progress',
-    'analysis.detected_rallies': 'Detected Rallies',
-    'analysis.highlights': 'Highlights',
     'analysis.tip': 'Analysis runs in the background. You can leave this page and return later.',
     'analysis.failed': '❌ Analysis failed:',
     
@@ -220,17 +167,9 @@ export const translations = {
     'rally.auto_play.on': '▶ Auto-Play ON',
     'rally.auto_play.off': '⏸ Auto-Play OFF',
     'rally.play': '▶ Play',
-    'rally.keep': '✅ Keep',
-    'rally.reject': '❌ Reject Rally',
     'rally.no_clip': 'No clip',
-    'rally.highlight.set': '⭐ Remove Highlight',
     'rally.highlight.mark': '☆ Mark as Highlight',
     'rally.highlight.remove': '⭐ Remove Highlight',
-    'rally.step_back': '⏪ -100ms',
-    'rally.step_forward': '+100ms ⏩',
-    'rally.keyboard_tip': 'Arrow keys left/right also work',
-    'rally.validate.accept': '✅ Confirm',
-    'rally.validate.reject': '❌ Reject',
     
     // Rally Status
     'rally.status.accepted': '✅ Confirmed',
@@ -254,20 +193,12 @@ export const translations = {
     'shortcuts.tip': 'Note: Shortcuts only work when video is selected and not typing in notes field.',
     
     // Upload
-    'upload.title': 'Upload Video',
     'upload.analyze_title': 'Analyze New Video',
-    'upload.drag_drop': 'Drag & drop video here or click to select',
-    'upload.supported_formats': 'Supported formats: MP4, AVI, MOV, MKV, WebM',
-    'upload.start': 'Start Upload',
     'upload.uploading': '⏳ Uploading...',
     
     // Common
-    'common.loading': 'Loading...',
-    'common.error': 'Error',
     'common.refresh': 'Refresh',
     'common.back': '← Back',
-    'common.close': 'Close',
-    'common.duration': 'Duration',
     'common.status': 'Status',
     'common.last_updated': 'Last updated',
     'common.tip': 'Tip',

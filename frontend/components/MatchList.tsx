@@ -1,24 +1,7 @@
 "use client";
 
 import { useLanguage } from "../lib/LanguageContext";
-import { t } from "../lib/translations";
-
-interface Match {
-  id: number;
-  filename: string;
-  original_filename: string;
-  duration: number | null;
-  upload_date: string;
-  status: string;
-  error_message: string | null;
-  match_date: string | null;
-  player_name: string | null;
-  opponent_name: string | null;
-  result: string | null;
-  score: string | null;
-  notes: string | null;
-  custom_title: string | null;
-}
+import type { Match } from "../lib/types";
 
 interface MatchListProps {
   matches: Match[];

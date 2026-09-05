@@ -1,7 +1,7 @@
 # TTLab - Projektübergabe & Entwicklungsstand
 
-**Version:** V0.4 (Video-Export optimiert)  
-**Datum:** 23. August 2026  
+**Version:** V0.5 (Performance- & Highlight-Optimierung)  
+**Datum:** 5. September 2026  
 **Projekttyp:** Lokale Videoanalyse-Plattform für Tischtennis mit KI-gestützter Ballwechsel-Erkennung
 
 ---
@@ -371,37 +371,6 @@ ttlab/data/
 
 ---
 
-### V0.4 (Video-Export & Performance - abgeschlossen)
-
-**Neue Funktionen:**
-
-- ✅ Dual-Mode Video-Export (Fast Mode ~2s / Compatible Mode ~60s)
-- ✅ Windows Media Player Kompatibilität garantiert
-- ✅ Automatischer Fallback bei Inkompatibilität
-- ✅ H.264 Main Profile + AAC Encoding
-- ✅ yuv420p Pixel-Format für maximale Kompatibilität
-
-**Algorithmus-Verbesserungen:**
-
-- Smart Fallback Logik im Frontend
-- Blob-basierter Download mit Fehlerbehandlung
-- Query-Parameter `?fast=true` für schnellen Export
-
-**Bugfixes:**
-
-- Windows Media Player Error 0x80004005 behoben
-- Export-Dauer von 60s auf 2s reduziert (wenn möglich)
-- CORS-Konfiguration für Blob-Downloads korrigiert
-
-**Database Changes:** Keine
-
-**API-Endpunkte erweitert:**
-
-- `GET /api/matches/{id}/export-highlights-video?fast=true` - Schneller Modus
-- `GET /api/matches/{id}/export-all-rallies-video?fast=true` - Schneller Modus
-
----
-
 ### V0.3 (Tischkalibrierung & Validierung - abgeschlossen)
 
 **Neue Funktionen:**
@@ -449,15 +418,73 @@ ttlab/data/
 
 ---
 
-### V0.4 (Abgeschlossen - Ball-Tracking Modell & Video-Export)
+### V0.4 (Video-Export - abgeschlossen)
 
-**Abgeschlossene Teile:**
+**Neue Funktionen:**
 
-- ✅ Dual-Mode Video-Export (Fast/Compatible)
-- ✅ Windows Media Player Kompatibilität
-- ✅ Smart Fallback Download-Logik
+- ✅ Dual-Mode Video-Export (Fast Mode ~2s / Compatible Mode ~60s)
+- ✅ Windows Media Player Kompatibilität garantiert
+- ✅ Automatischer Fallback bei Inkompatibilität
+- ✅ H.264 Main Profile + AAC Encoding
+- ✅ yuv420p Pixel-Format für maximale Kompatibilität
 
-**Ausstehende Teile (V0.4.1 geplant):**
+**API-Endpunkte erweitert:**
+
+- `GET /api/matches/{id}/export-highlights-video?fast=true` - Schneller Modus
+- `GET /api/matches/{id}/export-all-rallies-video?fast=true` - Schneller Modus
+
+---
+
+### V0.5 (Performance- & Highlight-Optimierung - abgeschlossen)
+
+**Performance (Analyse stark beschleunigt, Erkennungsqualität unverändert):**
+
+- ✅ Zwei Analyse-Modi per Button: **⚡ Volle Leistung** (alle Kerne minus 1; bit-identisch zur ursprünglichen Erkennung – per Test verifiziert) und **🌙 Hintergrund** (~halbe Kerne, `frame_step=2`, Downscale auf 960px Breite)
+- ✅ Segment-parallele Motion-Dekodierung: jeder Worker erhält eigene `VideoCapture`, `CAP_PROP_POS_FRAMES`-Seek, Chunk-Grenzen auf dem Frame-Step-Raster (Ergebnisse im Performance-Modus bit-identisch)
+- ✅ Ball-Validierung parallel über alle Kandidaten-Gruppen (Queue + Threads, persistente `VideoCapture` pro Worker, Live-Fortschritt „Ballwechsel X/Y geprüft")
+- ✅ 1-Seek-Optimierung beim Ball-Lesen (`ball_seek_mode="single"`): statt 3 Seeks nur noch 1 – identische Treffer, ~2,8× schneller (Fallback `"triple"` verfügbar)
+- ✅ Audio-Extraktion überlappt mit der Motion-Phase
+- ✅ Parallele Clip-Extraktion (ThreadPoolExecutor + mehrere FFmpeg-Prozesse)
+- ✅ Worker-Zahl dynamisch über `os.cpu_count()` – nichts hardcoded, funktioniert auf jedem PC
+- ✅ Fortschrittsanzeige beginnt bei 2 % statt 10 %, Phasen-Timing-Logs in der Backend-Konsole
+
+**Rally-Erkennung (Qualität):**
+
+- ✅ Bounce-Decay-Filter (`_strip_bounce_tail`): Erkennt Phasen, in denen nach dem Ballwechsel der Ball auf den Tisch geworfen oder aufgehoben wird → Clips enden rechtzeitig, Fehl-Rallys werden verworfen (Parameter: `bounce_height_decay=0.95`, `bounce_interval_decay=0.85`, `bounce_entry_ratio=0.9`)
+
+**Highlight-Erkennung (neu kalibriert):**
+
+- ✅ `classify_highlight()`: Rally ist Highlight wenn **Dauer ≥ 10s ODER Impact-Sounds ≥ 24 ODER Score ≥ 0.9 × Match-Maximum** (kalibriert auf ~10–17 % der Rallys pro Match; 24 Sounds ≈ 12 echte Ballkontakte)
+- ✅ Automatische Highlights im Frontend sichtbar: Badge ⭐, Highlight-Filter, gelber Hintergrund, H-Shortcut, Toggle-Button; manuelle Markierungen (`user_marked_highlight`) haben Vorrang und bleiben erhalten
+- ✅ `POST /api/matches/{id}/reevaluate-highlights` + Button **„🔄 Neu bewerten"**: wendet aktuelle Regeln auf bestehende Matches an, ohne neue Video-Analyse
+- ✅ **Export-Fix:** Video-Export und Clip-Download filtern jetzt auf `is_highlight OR user_marked_highlight` – exakt wie die Frontend-Anzeige (`isMarked`). Zuvor fehlten automatisch erkannte Highlights (Filter nur `user_marked_highlight`) bzw. nach „Neu bewerten" manuell markierte (Filter nur `is_highlight`). „Neu bewerten" entfernt manuelle Markierungen nie mehr aus dem Highlight-Status
+
+**Windows-Media-Player-Kompatibilität (0x80004005-Fix):**
+
+- ✅ Ursache gefunden: iPhone-Videos sind **HEVC Main 10 (10-bit)**; die Clip-Extraktion (libx264 ohne `pix_fmt`) erzeugte daraus **H.264 High 10 (Hi10P)** – ein Profil, das der Windows Media Player nicht decodieren kann („Es wurden nicht unterstützte Codierungseinstellungen verwendet", 0x80004005). Der Fast-Export (`-c copy`) kopiert dieses Profil 1:1; nur der Compatible-Modus (`yuv420p`) funktionierte
+- ✅ Clip-Extraktion schreibt jetzt `pix_fmt=yuv420p` + `movflags +faststart` – alle neuen Clips sind 8-bit H.264 High und damit WMP-kompatibel
+- ✅ Einmal-Migration `backend/reencode_clips.py`: re-encodiert bestehende 10-bit-Clips in-place (Video CRF 18, Audio-Copy) und löscht veraltete Export-Dateien – bereits über alle 406 betroffenen Clips gelaufen, keine Neu-Analyse nötig
+
+**UX:**
+
+- ✅ Tastatur-Shortcuts (Space Play/Pause, ←/→ 100ms, ↑/↓ Rally, H Highlight, R/N/L Validierung, 1-4 Filter, Strg+←/→ Video-Position) mit ShortcutsModal (Button in der Kopfzeile)
+- ✅ Video-Player: Geschwindigkeit 0.25–1.5x, Loop-Funktion, Vor-/Zurück-Navigation zwischen Rallys, Auto-Scroll zum Video
+- ✅ Analyse-Ansicht aktualisiert sekündlich (vorher 3s-Polling); „Erkannte Rallys / Highlights"-Kacheln während der Analyse entfernt
+- ✅ Notizen werden live mit Debounce (600ms) gespeichert, Rally-Nummerierung pro Match, übersetzte Tooltips auf allen Buttons
+
+**Stabilität & Code-Qualität:**
+
+- ✅ Background-Analyse-Fix: Fortschritts-Updates funktionieren wieder (ursprünglich `asyncio.run()` im Thread kaputt → jetzt `asyncio.to_thread` + `run_coroutine_threadsafe`)
+- ✅ Streaming-Upload (1MB-Chunks), `lifespan` statt `on_event`, `async_sessionmaker`, `eval()` durch sicheres `_parse_frame_rate()` ersetzt
+- ✅ Frontend: geteilte Typen (`lib/types.ts`) und API-Helper (`lib/api.ts`), React-Refs statt `querySelector`, `useMemo` für Rally-Nummern, 32 unbenutzte Translation-Keys entfernt
+- ✅ Export-/Download-Endpunkte refaktoriert (gemeinsame Helper), Bulk-Delete, `request.base_url` statt hardcoded localhost
+- ✅ SQLite-DB unter `data/db/ttlab.db` (Clips in `data/clips/`, Originale in `data/videos/`)
+
+---
+
+### V0.6 (Geplant - Ball-Tracking-Modell YOLOv8n)
+
+**Geplante Inhalte (zuvor V0.4.1):**
 
 - [ ] Trainiertes YOLOv8n oder RT-DETR Modell für Ball-Erkennung
 - [ ] Reduktion False Positives (Gehbewegungen, Serve-Vorbereitung)
@@ -480,7 +507,7 @@ ttlab/data/
 
 ---
 
-### V0.5 (Geplant - Shot-Klassifikation)
+### V0.7 (Geplant - Shot-Klassifikation)
 
 **Ziele:**
 
@@ -497,7 +524,7 @@ ttlab/data/
 
 ---
 
-### V0.6 (Geplant - Taktik-Analyse)
+### V0.8 (Geplant - Taktik-Analyse)
 
 **Ziele:**
 
@@ -516,7 +543,7 @@ ttlab/data/
 
 ## Aktueller Entwicklungsstand
 
-### Abgeschlossene Tasks (V0.1 - V0.4)
+### Abgeschlossene Tasks (V0.1 - V0.5)
 
 #### Backend
 
@@ -527,10 +554,13 @@ ttlab/data/
 - [x] RallyDetector-Klasse (Motion + Audio + Ball)
 - [x] VideoProcessor (FFmpeg Wrapper)
 - [x] Background-Job für Videoanalyse
-- [x] Status-Tracking (pending → analyzing → ready)
+- [x] Status-Tracking (pending → processing → completed/failed)
 - [x] Error-Handling mit sinnvollen Fehlermeldungen
-- [x] **Dual-Mode Video-Export (Fast/Compatible)**
-- [x] **Windows Media Player Kompatibilität**
+- [x] Dual-Mode Video-Export (Fast/Compatible)
+- [x] **Zwei Analyse-Modi (performance/background) mit paralleler Pipeline**
+- [x] **Bounce-Decay-Filter gegen zu lange Clips & Fehl-Rallys**
+- [x] **Highlight-Klassifizierung + Reevaluate-Endpoint**
+- [x] **Streaming-Upload (1MB-Chunks), Bulk-Delete, Export-/Download-Refactoring**
 
 #### Frontend
 
@@ -541,12 +571,15 @@ ttlab/data/
 - [x] Highlight-Filter Toggle
 - [x] Auto-Play Queue
 - [x] 100ms-Schritt Navigation (Pfeiltasten)
-- [x] Result-Filter (Siege/Niederlagen/Alle)
+- [x] Result-Filter (Siege/Niederlagen/Unentschieden/Alle)
 - [x] Statistik-Cards (Gesamtübersicht)
 - [x] Delete-Button für Matches
 - [x] Export-Funktion (Highlights concat)
-- [x] **Smart Fallback Download-Logik**
-- [x] **Blob-basierter Download mit Fehlerbehandlung**
+- [x] **Tastatur-Shortcuts + ShortcutsModal**
+- [x] **Video-Player: Geschwindigkeit, Loop, Rally-Navigation**
+- [x] **Automatische Highlights (Badge/Filter/Shortcut) + „Neu bewerten"-Button**
+- [x] **1s-Live-Polling während der Analyse, Notizen-Debounce, übersetzte Tooltips**
+- [x] **Geteilte Typen & API-Helper (lib/types.ts, lib/api.ts), DE/EN-Übersetzungen vollständig**
 
 #### Infrastruktur
 
@@ -584,40 +617,34 @@ ttlab/data/
 - Tischkalibrierung begrenzt Analysebereich
 - Audio-Peaks bestätigen Ball-Schläger-Kontakt
 - Mind. 3 Impacts erforderlich für validierten Rally
+- **Neu (V0.5):** Bounce-Decay-Filter verwirft Rallys, die nur aus Ball-aufheben/auf-Tisch-werfen bestehen, und schneidet solche Enden ab
 
 **Restprobleme:**
 
-- Immer noch ~30-40% False Positive Rate
+- False Positive Rate deutlich gesunken (Bounce-Filter), aber immer noch vorhanden
 - Einfache Helligkeitsfilterung (180-255 RGB) zu ungenau
 - Kleine/schnelle Bälle werden übersehen
 
-**Nächster Schritt (V0.4):** Trainiertes Ball-Tracking-Modell entwickeln
+**Nächster Schritt (V0.6):** Trainiertes Ball-Tracking-Modell entwickeln
 
 ---
 
 #### GitHub-Repository Setup
 
-**Status:** In Progress (V0.4 ready for commit)
+**Status:** Repository existiert (https://github.com/EtwasJonas/TTLab) – **V0.5-Änderungen sind noch nicht committet**
 
-**Aufgaben:**
+**Aktuelle uncommittete Änderungen (Stand V0.5):**
 
-- [ ] Initiales Git-Repository erstellen (`git init`)
-- [ ] Erstes Commit mit allen Dateien (`git add .`, `git commit`)
-- [ ] Remote-Repository auf GitHub anlegen
-- [ ] Push durchführen (`git remote add origin`, `git push -u origin main`)
+- Geändert: `backend/app/database.py`, `main.py`, `rally_detection.py`, `video_processor.py`, `frontend/app/page.tsx`, `frontend/components/MatchDetail.tsx`, `MatchList.tsx`, `VideoUpload.tsx`, `frontend/lib/translations.ts`, diverse README/Doku-Dateien
+- Neu: `frontend/lib/api.ts`, `frontend/lib/types.ts`
+- Gelöscht: `DOKUMENTATION_VIDEO_EXPORT.md` (veraltet)
 
-**Empfohlene Vorgehensweise:**
+**Commit-Vorschlag für V0.5:**
 
 ```bash
-cd C:\Users\Jonas\Documents\OpenCode\ttlab
-git init
-git add .
-git commit -m "Initial commit: TTLab V0.4 - Video-Export optimiert"
-# GitHub Desktop: Repository hinzufügen und pushen
-# ODER CLI:
-git remote add origin https://github.com/USERNAME/ttlab.git
-git branch -M main
-git push -u origin main
+git add -A
+git commit -m "V0.5: Parallelisierte Analyse, Bounce-Filter, Highlight-Kalibrierung, UX"
+git push
 ```
 
 ---
@@ -626,7 +653,7 @@ git push -u origin main
 
 #### Fehlende Automated Tests
 
-**Status:** Nur manuelles Testing durchgeführt
+**Status:** Kein permanentes Test-Framework. In V0.5 wurden Korrektheit ad-hoc mit temporären Skripten verifiziert (Bit-Identität Motion-Pipeline, Seek-Äquivalenz `single` vs `triple`, 6 Bounce-Szenarien, Highlight-Grenzfälle) – diese Skripte sind nicht eingecheckt.
 
 **Risiken:**
 
@@ -709,10 +736,10 @@ alembic upgrade head
 
 **Aktuelles Verhalten:**
 
-- Upload startet Background-Analyse
-- Frontend pollt Status alle 2 Sekunden
-- Bei Timeout: User sieht "Analyzing...", aber Backend arbeitet weiter
-- Nach Abschluss: Status wechselt zu "ready", User muss Seite neu laden
+- Upload startet Background-Analyse (Streaming, 1MB-Chunks)
+- Frontend pollt Status des ausgewählten Matches jede Sekunde, Dashboard-Statistiken alle 3s
+- Bei Timeout: User sieht "Analyse läuft...", aber Backend arbeitet weiter
+- Nach Abschluss: Status wechselt zu "completed", UI aktualisiert automatisch
 
 **Workaround:**
 
@@ -804,12 +831,11 @@ alembic upgrade head
 
 ## Roadmap
 
-### Kurzfristig (Q3 2026)
+### Kurzfristig (nächste Sitzung: V0.6)
 
 | Feature | Status | Priorität | Aufwand |
 |---------|--------|-----------|---------|
-| GitHub Repo Setup | 🟡 In Progress | Hoch | 1h |
-| V0.4 Planning | ⚪ Pending | Hoch | 2h |
+| V0.5-Änderungen committen & pushen | 🟡 Offen | Hoch | 0.5h |
 | Labeling Tool | ⚪ Pending | Hoch | 8h |
 | Datensatz sammeln (500-1000 Frames) | ⚪ Pending | Hoch | 4h |
 | YOLOv8n Training | ⚪ Pending | Hoch | 6h |
@@ -853,22 +879,28 @@ ttlab/
 │   │   └── schemas.py           # Pydantic Schemas für Request/Response
 │   │
 │   ├── venv/                    # Python Virtual Environment (nicht versioniert)
+│   ├── reencode_clips.py        # Einmal-Migration: 10-bit-Clips → 8-bit yuv420p (WMP-Fix)
 │   ├── pyproject.toml           # Python Dependencies (uv)
 │   └── uv.lock                  # Dependency Lockfile
 │
 ├── frontend/
 │   ├── app/
 │   │   ├── layout.tsx           # Root Layout mit Providers
-│   │   ├── page.tsx             # Dashboard (Match-Liste, Stats)
+│   │   ├── page.tsx             # Dashboard (Match-Liste, Stats, Polling)
 │   │   └── globals.css          # Globale Styles (Tailwind)
 │   │
 │   ├── components/
 │   │   ├── MatchList.tsx        # Match-Übersicht mit Filter
-│   │   ├── MatchDetail.tsx      # Detail-View mit Player & Kalibrierung
-│   │   └── ui/                  # Wiederverwendbare UI-Komponenten
-│   │       ├── button.tsx
-│   │       ├── card.tsx
-│   │       └── input.tsx
+│   │   ├── MatchDetail.tsx      # Detail-View mit Player, Shortcuts, Highlights
+│   │   ├── VideoUpload.tsx      # Upload (Drag & Drop)
+│   │   ├── LanguageSwitcher.tsx # DE/EN-Umschalter + Shortcuts-Button
+│   │   └── ShortcutsModal.tsx   # Tastatur-Shortcuts-Übersicht
+│   │
+│   ├── lib/
+│   │   ├── api.ts               # API_BASE/apiUrl-Helper
+│   │   ├── types.ts             # Geteilte Typen (Match, Rally, AnalysisMode)
+│   │   ├── translations.ts      # DE/EN-Übersetzungen
+│   │   └── LanguageContext.tsx  # Language-Provider/Hook
 │   │
 │   ├── public/                  # Statische Assets
 │   ├── next.config.ts           # Next.js Konfiguration
@@ -879,7 +911,8 @@ ttlab/
 ├── data/                        # NICHT versioniert (.gitignore)
 │   ├── videos/                  # Originalvideos (hochgeladen von Usern)
 │   ├── clips/                   # Extrahierte Rally-Clips
-│   └── ttlab.db                 # SQLite Datenbank
+│   └── db/
+│       └── ttlab.db             # SQLite Datenbank
 │
 ├── .git/                        # Git Repository
 ├── .gitignore                   # Ausschlussregeln (data/, venv/, node_modules/)
@@ -901,6 +934,58 @@ Production:  http://<server-ip>:8000
 ```
 
 ### Endpunkte
+
+#### Übersicht (Stand V0.5, aus `backend/app/main.py`)
+
+| Methode | Pfad | Zweck |
+|---------|------|-------|
+| POST | `/api/upload` | Video hochladen (Streaming, 1MB-Chunks), Match erstellen |
+| GET | `/api/matches` | Alle Matches |
+| GET | `/api/matches/{id}` | Einzelnes Match |
+| PATCH | `/api/matches/{id}` | Metadaten aktualisieren (Titel, Spieler, Ergebnis, Notizen, …) |
+| DELETE | `/api/matches/{id}` | Match löschen (inkl. Clips & Rallys) |
+| POST | `/api/matches/{id}/analyze?mode=performance\|background` | Analyse starten (**V0.5:** Modus-Wahl) |
+| POST | `/api/matches/{id}/reevaluate-highlights` | **Neu (V0.5):** Highlights mit aktuellen Regeln neu bewerten |
+| GET | `/api/matches/{id}/rallies` | Alle Rallys eines Matches |
+| GET | `/api/matches/{id}/status` | Verarbeitungsstatus (Progress, Message) |
+| GET | `/api/matches/{id}/export-highlights-video?fast=true` | Highlight-Video exportieren |
+| GET | `/api/matches/{id}/export-all-rallies-video?fast=true` | Alle-Rallys-Video exportieren |
+| GET | `/api/matches/{id}/download-all-rallies` | Alle Clips als ZIP |
+| GET | `/api/matches/{id}/download-highlights` | Highlight-Clips als ZIP |
+| PATCH | `/api/rallies/{id}` | Rally aktualisieren (Validierung, Notiz, manuelles Highlight) |
+| GET | `/api/clips/{clip_filename}` | Clip streamen (Range-Support) |
+| GET | `/api/videos/{video_filename}` | Originalvideo streamen (Range-Support) |
+| GET | `/api/health` | Health Check |
+
+**Hinweis:** Match- und Rally-IDs sind Integer (nicht UUID). Match-Status: `pending`, `processing`, `completed`, `failed`.
+
+#### POST /api/matches/{id}/analyze (V0.5 geändert)
+
+**Query Parameters:**
+
+| Parameter | Typ | Default | Beschreibung |
+|-----------|-----|---------|--------------|
+| `mode` | string | `background` | `performance`: alle Kerne minus 1, volle Auflösung, bit-identisches Ergebnis. `background`: halbe Kerne, `frame_step=2`, 960px – PC bleibt nutzbar |
+
+**Response:**
+
+```json
+{ "message": "Analyse gestartet", "mode": "performance" }
+```
+
+**Status Codes:** `202 Accepted`, `400` (ungültiger Modus / kein Video / läuft bereits), `404`
+
+#### POST /api/matches/{id}/reevaluate-highlights (Neu in V0.5)
+
+**Beschreibung:** Wendet die aktuelle Highlight-Heuristik (`classify_highlight`: Dauer ≥ 10s ODER ≥ 24 Impacts ODER Score ≥ 0.9 × Match-Maximum) auf alle Rallys eines abgeschlossenen Matches an – ohne neue Video-Analyse. Manuelle Markierungen (`user_marked_highlight`) bleiben unberührt und halten die Rally dauerhaft als Highlight (auch wenn die Heuristik sie nicht auswählen würde).
+
+**Response:**
+
+```json
+{ "message": "Highlights neu bewertet", "highlights": 12, "total_rallies": 100 }
+```
+
+**Status Codes:** `200 OK`, `400` (Match nicht abgeschlossen), `404`
 
 #### GET /api/matches
 
@@ -1705,99 +1790,54 @@ sudo ufw enable
 
 **Datei:** `backend/app/rally_detection.py`
 
-**Zweck:** Kernlogik der Ballwechsel-Erkennung (Motion + Audio + Ball)
+**Zweck:** Kernlogik der Ballwechsel-Erkennung (Motion + Audio + Ball), seit V0.5 vollständig parallelisiert
 
-**Wichtige Methoden:**
+**Architektur (V0.5):**
 
 ```python
 class RallyDetector:
-    def __init__(self, table_corners: Optional[List[Tuple[int, int]]] = None):
-        """
-        Initialisiert den RallyDetector mit optionaler Tischkalibrierung.
-        
-        Args:
-            table_corners: 4 Ecken des Tisches [(x1,y1), (x2,y2), (x3,y3), (x4,y4)]
-        """
-        self.table_corners = table_corners
-        self.bg_subtractor = cv2.createMOG2(history=500, varThreshold=100)
-    
-    def detect(self, video_path: str) -> List[RallyCandidate]:
-        """
-        Hauptmethode zur Rally-Erkennung.
-        
-        Returns:
-            Liste von RallyCandidate-Objekten mit start_time, end_time, confidence
-        """
-        # 1. Motion Detection
-        motion_events = self._detect_motion(video_path)
-        
-        # 2. Audio Peak Detection
-        audio_peaks = self._detect_audio_peaks(video_path)
-        
-        # 3. Ball Candidate Detection
-        ball_candidates = self._detect_ball_candidates(video_path)
-        
-        # 4. Fusion aller Signale
-        rallies = self._fuse_signals(motion_events, audio_peaks, ball_candidates)
-        
-        return rallies
-    
-    def _detect_motion(self, video_path: str) -> List[MotionEvent]:
-        """
-        Bewegungserkennung mit OpenCV MOG2.
-        
-        Algorithmus:
-        1. Hintergrundmodell erstellen
-        2. Vordergrundmasken berechnen
-        3. Konturen finden
-        4. Bewegung im Tischbereich prüfen
-        """
-        # ... Implementierung ...
-    
-    def _detect_audio_peaks(self, video_path: str) -> List[AudioPeak]:
-        """
-        Audio-Peak-Erkennung mit librosa.
-        
-        Algorithmus:
-        1. Audio extrahieren
-        2. RMS-Energie berechnen
-        3. Schwellenwert-basierte Peak-Erkennung
-        4. Benachbarte Peaks mergen
-        """
-        # ... Implementierung ...
-    
-    def _detect_ball_candidates(self, video_path: str) -> List[BallCandidate]:
-        """
-        Ballkandidaten-Erkennung im kalibrierten Tischbereich.
-        
-        Algorithmus:
-        1. Frames einlesen
-        2. ROI (Tischbereich) extrahieren
-        3. Helligkeitsfilter (180-255 RGB für weiße Bälle)
-        4. Konturen finden, Größe prüfen (3-15px Durchmesser)
-        5. Position zwischen Frames tracken
-        """
-        # ... Implementierung ...
-    
-    def _fuse_signals(
-        self,
-        motion_events: List[MotionEvent],
-        audio_peaks: List[AudioPeak],
-        ball_candidates: List[BallCandidate]
-    ) -> List[RallyCandidate]:
-        """
-        Fusion aller Signale zu Rally-Kandidaten.
-        
-        Logik:
-        - Motion + Audio innerhalb von 200ms = möglicher Rally-Start
-        - Ball-Kandidat bestätigt = Confidence +0.2
-        - Multiple Audio-Peaks (≥3) = impact_count erhöht
-        - Dauer < 500ms = verwerfen (zu kurz für echten Rally)
-        """
-        # ... Implementierung ...
+    def __init__(self, motion_threshold=15.0, audio_threshold=0.3)
+        # Bounce-Filter: bounce_height_decay=0.95, bounce_interval_decay=0.85,
+        #                bounce_entry_ratio=0.9
+        # Highlight-Regeln: highlight_min_duration=10.0 (s),
+        #                   highlight_min_impacts=24, highlight_score_ratio=0.9
+        # ball_seek_mode = "single" (1 Seek statt 3, ~2.8x schneller; "triple" = Fallback)
+
+    # --- Pipeline (aufgerufen aus main.process_match_background_sync) ---
+    def extract_motion_features(video_path, max_workers, frame_step=1,
+                                max_width=None, progress_callback=None)
+        # Segment-parallele Bewegungsanalyse: Jeder Worker bekommt eigene
+        # VideoCapture + POS_FRAMES-Seek; Chunk-Grenzen liegen auf dem
+        # Frame-Step-Raster. frame_step=1 + max_workers=1 + max_width=None
+        # = bit-identisch zur ursprünglichen single-threaded Erkennung.
+    def extract_audio_features(video_path)      # librosa, läuft parallel zur Motion-Phase
+    def detect_rallies(video_path, mode, progress_callback)
+        # Orchestriert: Motion + Audio (parallel) → Kombination → Audio-Peak-Gruppen
+        # → Bounce-Filter → Ball-Validierung (parallel) → Rally-Segmente
+
+    # --- Highlight & Bounce ---
+    def classify_highlight(duration, impact_count, score, max_score)
+        # Highlight wenn Dauer>=10s ODER Impacts>=24 ODER Score>=0.9*max
+    def _strip_bounce_tail(...)                 # verwirft/kürzt "Ball aufheben/werfen"-Phasen
+
+    # --- Ball-Validierung (parallel über Gruppen) ---
+    def _validate_ball_hits(...)                # Queue + Threads, Live-Fortschritt
+    def _ball_scanner(...)                      # persistente VideoCapture pro Worker
+    def _read_peak_frames_single(...)           # 1-Seek-Variante (Standard)
+    def _read_peak_frames_triple(...)           # 3-Seek-Variante (Fallback)
+    def _is_ball_candidate(...)                 # Helligkeit + Größe im Tischbereich
+
+    # --- Score-Fusion ---
+    def _resample_motion(...)                   # Motion auf Audio-Zeitpunkte resampeln
+    def _combine_scores(...)                    # gewichtete Kombination Motion+Audio
+    def _find_rally_segments(...)               # Schwellwert-Segmente → Rallys
 ```
 
-**Zeilennummern:** 1-250 (gesamte Datei)
+**Wichtige Konstanten/Stellen:**
+
+- Modus-Parameter in `main.py`: `performance` → `frame_step=1`, volle Auflösung, Worker `max(1, cpu-1)`; `background` → `frame_step=2`, `motion_max_width=960`, Worker `max(1, cpu//2 - 1)`
+- Phasen-Progress: startet bei 2 %, Motion 2–40 %, Ball-Validierung 50–62 % mit Live-Zähler, Clips danach
+- Clip-Extraktion: `video_processor.create_rally_clips(max_workers, progress_callback)` mit ThreadPoolExecutor (FFmpeg, `threads=2` je Prozess)
 
 ---
 
@@ -2164,23 +2204,22 @@ export default function RallyTimeline({
 
 ## Nächste Schritte
 
-### Sofort (heute)
+### Sofort (nächster Chat: Start V0.6)
 
-1. **GitHub Repository erstellen**
-   - User entscheidet: GitHub Desktop vs. CLI
-   - Initiales Commit: `git add .`, `git commit -m "Initial commit: TTLab V0.3"`
-   - Remote hinzufügen und pushen
+1. **V0.5 committen & pushen**
+   - `git add -A && git commit -m "V0.5: Parallelisierte Analyse, Bounce-Filter, Highlight-Kalibrierung, UX" && git push`
+   - `frontend/tsconfig.tsbuildinfo` vorher prüfen (Build-Artefakt, ggf. aus .gitignore aufnehmen)
 
-2. **V0.4 Planning finalisieren**
+2. **V0.6 Planning finalisieren (Ball-Tracking-Modell)**
    - Labeling-Tool spezifizieren (welche Annotationen?)
    - Datensatz-Strategie (eigene Videos vs. öffentliche Datensätze?)
    - Modell-Auswahl (YOLOv8n vs. RT-DETR)
 
-### Diese Woche
+### V0.6 (Ball-Tracking-Modell)
 
 1. **Labeling-Tool entwickeln**
    - Einfaches React-Tool: Video frame-by-frame durchgehen
-   -Bounding Box um Ball zeichnen (x, y, width, height)
+   - Bounding Box um Ball zeichnen (x, y, width, height)
    - Export als YOLO-Format (txt-Dateien mit normalisierten Koordinaten)
    - Ziel: 500-1000 annotierte Frames
 
@@ -2192,34 +2231,33 @@ export default function RallyTimeline({
      - Weiße/orange Bälle
      - Unterschiedliche Ballgrößen (nah/fern)
 
-### Nächste 2 Wochen
-
-1. **Modell trainieren**
+3. **Modell trainieren**
    - YOLOv8n Architecture wählen (klein, schnell für Echtzeit)
    - Auf GTX 1050 trainieren (2 GB VRAM Limit beachten)
    - Hyperparameter-Tuning (learning rate, batch size, epochs)
    - Expected: 50-100 Epochs, ~2-4 Stunden Training
 
-2. **Integration in Backend**
+4. **Integration in Backend**
    - ONNX-Export des trainierten Modells
    - ONNX Runtime im Backend einbinden
    - RallyDetector um `_detect_ball_ml()` erweitern
    - Fallback auf alte Methode bei ML-Fehlern
+   - **Wichtig:** Performance-Modus-Muster übernehmen (parallele Worker via `os.cpu_count()`, Qualität darf nie schlechter werden)
 
-3. **Evaluation**
+5. **Evaluation**
    - Test-Videos mit Ground Truth vergleichen
    - Precision, Recall, F1-Score berechnen
    - False Positives analysieren (wo scheitert das Modell?)
    - Iteratives Verbessern (mehr Daten für Problemfälle)
 
-### Q4 2026 (Oktober - Dezember)
+### Danach (V0.7/V0.8)
 
-1. **Shot-Klassifikation**
+1. **Shot-Klassifikation (V0.7)**
    - Datensatz für Vorhand/Rückhand/Topspin/Slice sammeln
    - CNN-LSTM Hybrid-Modell trainieren
    - In Rally-Erkennung integrieren
 
-2. **Taktik-Analyse**
+2. **Taktik-Analyse (V0.8)**
    - Heatmap-Visualisierung implementieren
    - Pattern-Mining (welche Ballfolgen führen zu Punkten?)
    - Gegner-Schwachstellen identifizieren
@@ -2351,6 +2389,6 @@ Bei Fragen oder Problemen:
 
 ---
 
-**Letztes Update:** 17. August 2026  
+**Letztes Update:** 5. September 2026 (V0.5)  
 **Autor:** TTLab Development Team  
 **Lizenz:** Proprietär (alle Rechte vorbehalten)

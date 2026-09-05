@@ -8,7 +8,7 @@
 
 </div>
 
-[![Version](https://img.shields.io/badge/Version-0.3.0-blue)](https://github.com/yourusername/ttlab/releases)
+[![Version](https://img.shields.io/badge/Version-0.5.0-blue)](https://github.com/yourusername/ttlab/releases)
 [![License](https://img.shields.io/badge/License-Proprietary-red)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13+-green)](https://python.org)
 [![Next.js](https://img.shields.io/badge/Next.js-19-black)](https://nextjs.org)
@@ -24,11 +24,14 @@ TTLab ist eine Open-Source-Alternative zu vergleichbaren kommerziellen Plattform
 ### Kernfunktionen
 
 - **Automatische Rally-Erkennung** – Kombination aus Motion Detection, Audio-Peaks und Ball-Tracking
+- **Zwei Analyse-Modi** – ⚡ Volle Leistung (alle CPU-Kerne, identische Ergebnisse) oder 🌙 Hintergrund (PC bleibt nutzbar)
+- **Automatische Highlights** – Lange oder intensive Ballwechsel werden automatisch markiert; manuelle Favoriten bleiben erhalten; bestehende Matches mit einem Klick neu bewerten
 - **100% Lokal & Privat** – Keine Cloud, keine API-Calls, Videos bleiben privat
-- **Match-Verwaltung** – Metadaten, Statistiken, Filter nach Sieg/Niederlage
-- **Schnelle Analyse** – Asynchrone Verarbeitung im Hintergrund mit Fortschrittsanzeige
+- **Match-Verwaltung** – Metadaten, Statistiken, Filter nach Sieg/Niederlage/Unentschieden
+- **Schnelle parallele Analyse** – Multi-Core-Pipeline mit Live-Fortschritt (Sekunden-Updates)
+- **Tastatur-Shortcuts** – Play/Pause, Frame-Schritte, Rally-Navigation, Validierung (siehe In-App-Hilfe)
 - **Manuelle Kalibrierung** – Interaktive Tischmarkierung für präzisere Erkennung
-- **Clip-Export** – Alle akzeptierten Highlights als einzelnes Video exportieren
+- **Clip-Export** – Alle Highlights oder Rallys als einzelnes Video oder ZIP
 
 ---
 
@@ -87,16 +90,20 @@ npm install
 
 1. **Video hochladen** – MP4, AVI, MOV, MKV oder WebM über das Frontend
 2. **Tisch markieren** – 4 Ecken im Video anklicken (einmal pro Match)
-3. **Analyse starten** – Klick auf "Analyse jetzt starten"
-4. **Rallies prüfen** – Timeline durchgehen, falsche Erkennungen ablehnen
-5. **Highlights exportieren** – Alle akzeptierten Ballwechsel als Video
+3. **Analyse starten** – ⚡ Volle Leistung oder 🌙 Hintergrund-Modus wählen
+4. **Rallies prüfen** – Timeline durchgehen, falsche Erkennungen ablehnen, Highlights markieren (H)
+5. **Highlights exportieren** – Alle Highlights als Video oder ZIP
 
 ### Filter
 
 - **Alle Rallys** – Vollständige Liste
-- **Highlights** – Manuell markierte Top-Ballwechsel
+- **Highlights** – Automatische und manuell markierte Top-Ballwechsel
 - **Ballwechsel** – Nur akzeptierte Rallys
 - **Kein Ballwechsel** – Abgelehnte Erkennungen
+
+### Tastatur-Shortcuts
+
+Leertaste (Play/Pause), ←/→ (100ms-Schritte), ↑/↓ (vorherige/nächste Rally), H (Highlight), R/N/L (Validierung), 1-4 (Filter), Strg+←/→ (Video-Position). Die vollständige Liste ist über das Tastatur-Symbol in der Kopfzeile verfügbar.
 
 ### Sprachumschaltung
 
@@ -111,9 +118,11 @@ Oben rechts zwischen Deutsch und Englisch wechseln.
 | V0.1 | Veröffentlicht | Video Upload, Rally Detection (Motion + Audio), Clip-Export |
 | V0.2 | Veröffentlicht | Match-Metadaten, Statistik-Dashboard, Ergebnis-Filter |
 | V0.3 | Veröffentlicht | Tischkalibrierung, Rally-Validierung, 100ms-Navigation |
-| V0.4 | In Arbeit | Trainiertes YOLOv8n-Ball-Tracking, Labeling-Tool |
-| V0.5 | Geplant | Player Detection, Pose Estimation, Schlagtyp-Erkennung |
-| V0.6 | Geplant | Taktik-Analyse, Heatmaps, Schwachstellen-Erkennung |
+| V0.4 | Veröffentlicht | Dual-Mode Video-Export (Fast/Compatible) |
+| V0.5 | Veröffentlicht | Parallele Analyse (2 Modi), Bounce-Filter, Auto-Highlights, Shortcuts, UX |
+| V0.6 | Geplant | Trainiertes YOLOv8n-Ball-Tracking, Labeling-Tool |
+| V0.7 | Geplant | Player Detection, Pose Estimation, Schlagtyp-Erkennung |
+| V0.8 | Geplant | Taktik-Analyse, Heatmaps, Schwachstellen-Erkennung |
 | V1.0 | Geplant | KI-Coach (LLM), Spielerprofile, Trainingspläne |
 
 ---
@@ -166,7 +175,10 @@ A: FFmpeg muss installiert und im PATH sein. Backend-Console prüfen.
 A: Ja! Siehe Deployment-Dokumentation.
 
 **F: Wie genau ist die Rally-Erkennung?**  
-A: V0.3 erreicht ~60-70% Precision. V0.4 zielt auf >90%.
+A: Der Bounce-Filter aus V0.5 entfernt die meisten Fehl-Rallys (Ball aufheben/auf den Tisch springen). Trainiertes Ball-Tracking (V0.6) zielt auf >90% Precision.
+
+**F: Das exportierte Video lässt sich im Windows Media Player nicht abspielen (Fehler 0x80004005)?**  
+A: In V0.5 behoben. Clips aus 10-bit Handy-Videos (HEVC Main 10) werden jetzt als Standard 8-bit H.264 (yuv420p) encodiert. Für Clips älterer Versionen einmalig `python reencode_clips.py` im Backend-Ordner ausführen.
 
 **F: Sind mehrere Benutzer möglich?**  
 A: Aktuell nein. Für V1.0 geplant.
