@@ -50,19 +50,25 @@ TTLab is an open-source alternative to commercial table tennis analysis platform
 
 ## Quick Start
 
-### One-Click Launch (Windows)
+### Easy Install (Windows, recommended)
 
-After installation, double-click **"TTLab starten.bat"** on your desktop to start both backend and frontend servers automatically.
+1. Download or clone the project folder and unzip it
+2. Double-click **`install-TTLab.bat`**
+3. Done! The script automatically installs all required software (Python, Node.js, FFmpeg – only if not already present) and sets up TTLab. Afterwards, start TTLab via the **"TTLab starten"** shortcut on your desktop.
 
-### Prerequisites
+No terminal, no commands, no manual downloads. If anything goes wrong, see [Manual Installation](#manual-installation-for-developers).
+
+> **Note:** The installer requires `winget` (pre-installed on Windows 10 1809 and later) and an internet connection. TTLab itself runs fully offline afterwards.
+
+### Manual Installation (for developers)
+
+If the automatic installer is not an option:
 
 | Software | Version | Link |
 |----------|---------|------|
 | Python | 3.13+ | [Download](https://python.org) |
 | Node.js | 20+ | [Download](https://nodejs.org) |
 | FFmpeg | 7.x | [Guide](https://www.gyan.dev/ffmpeg/builds/) |
-
-### Installation
 
 ```bash
 # 1. Clone repository
@@ -71,9 +77,9 @@ cd ttlab
 
 # 2. Install backend
 cd backend
-uv venv
+python -m venv venv
 .\venv\Scripts\activate
-uv pip install -r requirements.txt
+pip install -r requirements.txt
 
 # 3. Install frontend
 cd ../frontend
@@ -81,6 +87,10 @@ npm install
 ```
 
 **Note:** FFmpeg is required for clip extraction.
+
+### Launching
+
+Double-click **"TTLab starten.bat"** in the project folder (or the desktop shortcut) – backend, frontend and browser start automatically.
 
 ---
 
@@ -123,6 +133,7 @@ Use the language toggle in the top-right corner to switch between German and Eng
 | V0.6 | Planned | Trained YOLOv8n Ball Tracking, Labeling Tool |
 | V0.7 | Planned | Player Detection, Pose Estimation, Shot Type Recognition |
 | V0.8 | Planned | Tactical Analysis, Heatmaps, Weakness Detection |
+| V0.9 | Planned | One-File Desktop App (single .exe, no Python/Node/FFmpeg required) |
 | V1.0 | Planned | AI Coach (LLM), Player Profiles, Training Plans |
 
 ---

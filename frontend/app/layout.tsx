@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import "./globals.css";
 import { LanguageProvider } from "../lib/LanguageContext";
 import LanguageSwitcher from "../components/LanguageSwitcher";
@@ -24,6 +25,20 @@ export default function RootLayout({
                 <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Table tennis intelligence</p>
               </div>
               <div className="flex items-center gap-3">
+                <nav className="flex items-center gap-1 text-sm">
+                  <Link
+                    href="/"
+                    className="rounded-full px-3 py-1.5 text-slate-300 transition hover:bg-white/[0.1] hover:text-white"
+                  >
+                    Dashboard
+                  </Link>
+                  <Link
+                    href="/labeling"
+                    className="rounded-full px-3 py-1.5 text-slate-300 transition hover:bg-white/[0.1] hover:text-white"
+                  >
+                    Labeling
+                  </Link>
+                </nav>
                 <LanguageSwitcher />
                 <span className="hidden sm:block rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-300">LOCAL • PRIVATE</span>
               </div>

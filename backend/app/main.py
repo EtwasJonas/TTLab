@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, func, or_, select
 from typing import List, Tuple
@@ -17,16 +17,20 @@ import asyncio
 from app.database import get_db, init_db, async_session_maker
 from app.models import Match, Rally
 from app.schemas import (
-    UploadResponse, 
-    MatchResponse, 
-    RallyResponse, 
+    UploadResponse,
+    MatchResponse,
+    RallyResponse,
     RallyDetectionResponse,
     ProcessingStatus,
     MatchUpdate,
     RallyUpdate,
+    AnnotationCreate,
+    DatasetCreate,
+    DatasetExport,
 )
 from app.rally_detection import RallyDetector
 from app.video_processor import VideoProcessor
+from app import labeling
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -66,6 +70,7 @@ CLIP_STORAGE_PATH = os.getenv("CLIP_STORAGE_PATH", "../data/clips")
 
 os.makedirs(VIDEO_STORAGE_PATH, exist_ok=True)
 os.makedirs(CLIP_STORAGE_PATH, exist_ok=True)
+os.makedirs(labeling.DATASETS_PATH, exist_ok=True)
 
 app.mount("/clips", StaticFiles(directory=CLIP_STORAGE_PATH), name="clips")
 app.mount("/videos", StaticFiles(directory=VIDEO_STORAGE_PATH), name="videos")
@@ -610,6 +615,149 @@ async def delete_match(match_id: int, db: AsyncSession = Depends(get_db)):
     await db.commit()
 
     return {"message": "Match erfolgreich gelöscht"}
+
+
+# --- V0.6: Labeling tool (ball-tracking dataset) -----------------------------
+#
+# The labeling UI (frontend route /labeling) needs two things from the
+# backend: single frames as JPEG (the browser cannot decode HEVC Main 10
+# videos itself) and a place to store YOLO-format annotations. All frame
+# navigation is index-based; see app/labeling.py for the storage layout.
+
+
+async def _get_match_or_404(match_id: int, db: AsyncSession) -> Match:
+    result = await db.execute(select(Match).where(Match.id == match_id))
+    match = result.scalar_one_or_none()
+    if not match:
+        raise HTTPException(status_code=404, detail="Match nicht gefunden")
+    return match
+
+
+@app.get("/api/matches/{match_id}/video-info", response_model=dict)
+async def get_match_video_info(match_id: int, db: AsyncSession = Depends(get_db)):
+    """Video metadata (fps, frame count, duration) for the labeling UI."""
+    match = await _get_match_or_404(match_id, db)
+    try:
+        info = await asyncio.to_thread(labeling.get_video_info, match.file_path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Video nicht lesbar: {e}")
+    return {
+        "match_id": match_id,
+        "duration": info["duration"],
+        "fps": info["fps"],
+        "frame_count": info["frame_count"],
+        "width": info["width"],
+        "height": info["height"],
+        "codec": info["codec"],
+        "rotation": info.get("rotation", 0),
+    }
+
+
+@app.get("/api/matches/{match_id}/frame")
+async def get_match_frame(
+    match_id: int,
+    frame: int,
+    max_width: int = labeling.DISPLAY_MAX_WIDTH,
+    db: AsyncSession = Depends(get_db),
+):
+    """Single video frame as JPEG (downscaled to max_width for the UI).
+
+    Frames are extracted server-side with OpenCV so HEVC/10-bit videos
+    work in every browser. Results are cached - see app/labeling.py.
+    """
+    match = await _get_match_or_404(match_id, db)
+    if frame < 0:
+        raise HTTPException(status_code=400, detail="Frame-Index muss >= 0 sein")
+    try:
+        jpeg = await asyncio.to_thread(
+            labeling.get_frame_jpeg, match.file_path, frame, max_width
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    # Frames are stable, so the browser may cache them. No "immutable"
+    # though: rendering changes (e.g. the V0.6 rotation fix) would be
+    # blocked from users for the full max-age otherwise.
+    return Response(
+        content=jpeg,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+@app.get("/api/labeling/datasets")
+async def list_labeling_datasets():
+    """All datasets with frame statistics (dataset picker in the labeling UI)."""
+    return labeling.list_datasets()
+
+
+@app.post("/api/labeling/datasets", status_code=201)
+async def create_labeling_dataset(payload: DatasetCreate):
+    """Create a new, empty dataset for ball annotations."""
+    try:
+        stats = labeling.create_dataset(payload.name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return stats
+
+
+@app.get("/api/labeling/datasets/{dataset}/annotations")
+async def get_labeling_annotations(dataset: str):
+    """All labeled frames of a dataset, ordered by match and frame index."""
+    try:
+        return labeling.get_annotations(dataset)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.post("/api/labeling/datasets/{dataset}/annotations")
+async def save_labeling_annotation(dataset: str, payload: AnnotationCreate, db: AsyncSession = Depends(get_db)):
+    """Store one labeled frame (full-res image + YOLO labels + annotations.json).
+
+    payload.bboxes contains one box per visible ball (multiple balls on
+    the floor -> multiple boxes); an empty list marks a negative sample.
+    Re-saving the same frame overwrites the previous annotation.
+    """
+    match = await _get_match_or_404(payload.match_id, db)
+    try:
+        stats = await asyncio.to_thread(
+            labeling.save_annotation,
+            dataset,
+            match.file_path,
+            payload.match_id,
+            payload.frame_index,
+            payload.bboxes,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return stats
+
+
+@app.delete("/api/labeling/datasets/{dataset}/annotations/{match_id}/{frame_index}")
+async def delete_labeling_annotation(dataset: str, match_id: int, frame_index: int):
+    """Remove a single labeled frame from the dataset."""
+    try:
+        stats = await asyncio.to_thread(
+            labeling.delete_annotation, dataset, match_id, frame_index
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return stats
+
+
+@app.post("/api/labeling/datasets/{dataset}/export")
+async def export_labeling_dataset(dataset: str, payload: DatasetExport):
+    """Build the ultralytics training layout (train/val split + data.yaml).
+
+    The split is deterministic for a given seed. Afterwards the dataset can
+    be trained with backend/ml/train_yolo.py (see backend/ml/README.md).
+    """
+    try:
+        result = await asyncio.to_thread(
+            labeling.export_dataset, dataset, payload.val_ratio, payload.seed
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return result
 
 
 @app.get("/api/health")

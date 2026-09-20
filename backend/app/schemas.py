@@ -96,3 +96,27 @@ class RallyUpdate(BaseModel):
     validation_status: Optional[str] = None
     user_marked_highlight: Optional[bool] = None
     notes: Optional[str] = None
+
+
+# --- V0.6: Labeling tool (ball-tracking dataset) ---
+
+
+class AnnotationCreate(BaseModel):
+    """One labeled frame of a match video.
+
+    bboxes is a list of YOLO boxes [cx, cy, w, h] (normalized 0..1), one
+    per visible ball - a frame with several balls on the floor gets
+    several boxes. An empty list marks a negative sample (no ball).
+    """
+    match_id: int
+    frame_index: int
+    bboxes: List[List[float]] = []
+
+
+class DatasetCreate(BaseModel):
+    name: str
+
+
+class DatasetExport(BaseModel):
+    val_ratio: float = 0.2
+    seed: int = 42

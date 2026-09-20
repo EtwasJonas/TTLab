@@ -50,19 +50,25 @@ TTLab ist eine Open-Source-Alternative zu vergleichbaren kommerziellen Plattform
 
 ## Schnelleinstieg
 
-### Ein-Klick-Start (Windows)
+### Einfache Installation (Windows, empfohlen)
 
-Nach der Installation einfach doppelt auf **"TTLab starten.bat"** auf dem Desktop klicken.
+1. Projektordner herunterladen bzw. klonen und entpacken
+2. Doppelklick auf **`install-TTLab.bat`**
+3. Fertig! Das Skript installiert automatisch alle nötigen Programme (Python, Node.js, FFmpeg – nur falls noch nicht vorhanden) und richtet TTLab ein. Danach startest du TTLab über die Verknüpfung **„TTLab starten"** auf dem Desktop.
 
-### Voraussetzungen
+Kein Terminal, keine Befehle, keine manuellen Downloads. Bei Problemen hilft die [Manuelle Installation](#manuelle-installation-für-entwickler).
+
+> **Hinweis:** Die Installation benötigt `winget` (ab Windows 10 1809 vorinstalliert) und eine Internetverbindung. TTLab selbst läuft danach komplett offline.
+
+### Manuelle Installation (für Entwickler)
+
+Falls die automatische Installation nicht in Frage kommt:
 
 | Software | Version | Link |
 |----------|---------|------|
 | Python | 3.13+ | [Download](https://python.org) |
 | Node.js | 20+ | [Download](https://nodejs.org) |
 | FFmpeg | 7.x | [Anleitung](https://www.gyan.dev/ffmpeg/builds/) |
-
-### Installation
 
 ```bash
 # 1. Repository klonen
@@ -71,9 +77,9 @@ cd ttlab
 
 # 2. Backend installieren
 cd backend
-uv venv
+python -m venv venv
 .\venv\Scripts\activate
-uv pip install -r requirements.txt
+pip install -r requirements.txt
 
 # 3. Frontend installieren
 cd ../frontend
@@ -81,6 +87,10 @@ npm install
 ```
 
 **Hinweis:** FFmpeg wird für die Clip-Erstellung benötigt.
+
+### Starten
+
+Doppelklick auf **„TTLab starten.bat"** im Projektordner (oder die Desktop-Verknüpfung) – Backend, Frontend und Browser werden automatisch gestartet.
 
 ---
 
@@ -123,6 +133,7 @@ Oben rechts zwischen Deutsch und Englisch wechseln.
 | V0.6 | Geplant | Trainiertes YOLOv8n-Ball-Tracking, Labeling-Tool |
 | V0.7 | Geplant | Player Detection, Pose Estimation, Schlagtyp-Erkennung |
 | V0.8 | Geplant | Taktik-Analyse, Heatmaps, Schwachstellen-Erkennung |
+| V0.9 | Geplant | One-File-Desktop-App (eine einzige .exe, kein Python/Node/FFmpeg nötig) |
 | V1.0 | Geplant | KI-Coach (LLM), Spielerprofile, Trainingspläne |
 
 ---

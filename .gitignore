@@ -19,7 +19,13 @@ build/
 data/videos/
 data/clips/
 data/db/
+data/datasets/
+data/models/
 *.db
+
+# ML-Training (V0.6): Trainings-Läufe und Umgebung auf dem Trainings-PC
+backend/ml/runs/
+backend/ml/venv-ml/
 
 # Environment
 .env

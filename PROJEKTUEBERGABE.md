@@ -482,22 +482,34 @@ ttlab/data/
 
 ---
 
-### V0.6 (Geplant - Ball-Tracking-Modell YOLOv8n)
+### V0.6 (In Entwicklung - Ball-Tracking-Modell YOLOv8n)
 
-**Geplante Inhalte (zuvor V0.4.1):**
+**Status: Phase 1 (Labeling-Tool) abgeschlossen – 11. September 2026**
 
-- [ ] Trainiertes YOLOv8n oder RT-DETR Modell für Ball-Erkennung
-- [ ] Reduktion False Positives (Gehbewegungen, Serve-Vorbereitung)
-- [ ] Ball-Trajektorie-Analyse (Flugkurve rekonstruieren)
-- [ ] Spin-Erkennung (Magnus-Effekt sichtbar machen)
+**Geplante Inhalte:**
 
-**Meilensteine:**
+- [x] Integriertes Labeling-Tool (Frontend-Route `/labeling`, server-seitige Frame-Extraktion – der Browser kann HEVC Main 10 nicht dekodieren)
+- [x] Trainings-Export (YOLO-Layout mit deterministischem 80/20 train/val-Split + `data.yaml`)
+- [x] Trainings-Skripte für den GTX-1050-Desktop (`backend/ml/train_yolo.py`, `export_onnx.py`, Anleitung `backend/ml/README.md`)
+- [ ] Datensatz sammeln: 500–1000 Frames manuell annotieren (User-Aufgabe, ~1–1,5h)
+- [ ] Modell trainieren (User-Aufgabe auf dem Linux-Mint-Desktop, ~2–4h)
+- [ ] Integration in die Rally-Erkennung: `MLBallDetector` via ONNX Runtime (kein torch im Backend!), alte Heuristik bleibt als Fallback vollständig erhalten
+- [ ] Evaluation: Precision/Recall gegen bestehende accepted/rejected-Rallys als Ground-Truth
 
-1. Labeling-Tool erstellen (500-1000 Frames manuell annotieren)
-2. Datensatz zusammenstellen (verschiedene Beleuchtungen, Winkel)
-3. Modell trainieren (YOLOv8n auf GTX 1050)
-4. Integration in Rally-Erkennung (Ball-Tracking als zusätzlicher Input)
-5. Evaluation (Precision/Recall auf Test-Videos)
+**Phase 1 – Labeling-Tool (fertig):**
+
+- **Backend `app/labeling.py`:** persistente `VideoCapture` pro Video (thread-sicher), Frame-Navigation **frame-index-basiert** (POS_MSEC-Seek hat Rundungsprobleme), JPEG-Anzeige-Frames auf 1280px verkleinert + LRU-Cache, Trainingsbilder in **voller Auflösung** gespeichert. **Rotations-Fix:** iPhone-Videos speichern die Orientierung als Display-Matrix (`side_data rotation: -180`); Browser wenden sie an, OpenCV ignoriert sie – alle Frames werden jetzt per `get_display_rotation()` (ffprobe, gecached) in die Anzeige-Orientierung gedreht (verifiziert gegen FFmpeg-Autorotate-Referenz). Preview UND Trainingsbild drehen konsistent, normalisierte BBox-Koordinaten passen dadurch immer. **Wichtig für Phase 2:** Auch die ML-Inferenz muss Frames über dieselbe rotationierte Extraktion lesen. Bounding-Boxes als normalisierte YOLO-Koordinaten `[cx, cy, w, h]` – unabhängig von der Anzeige-Auflösung. **Multi-Box:** Ein Frame kann mehrere Bälle enthalten (z.B. Bälle auf dem Boden) – eine Box pro Ball, eine Zeile pro Ball in der Label-Datei (Standard-YOLO-Multi-Objekt-Format); Alt-Annotationen (Einzel-`bbox` aus der ersten Phase) werden beim Lesen automatisch migriert. Frames ohne Ball werden als **Negativ-Samples** (leere Label-Datei) gespeichert – ultralytics nutzt sie als Hintergrund-Bilder, das ist die wichtigste Waffe gegen False Positives. `annotations.json` ist die Quelle der UI, Label-Dateien werden deterministisch daraus erzeugt. Atomares Schreiben (`.tmp` + `os.replace`), BOM-tolerantes Lesen.
+- **Datensatz-Struktur:** `data/datasets/<name>/raw/{images,labels}/` + `annotations.json`; Export erstellt `yolo/{images,labels}/{train,val}/` + `data.yaml` (Hardlinks statt Kopien – kein doppelter Speicherplatz, deterministischer Split per Seed).
+- **API-Endpunkte (alle verifiziert):** `GET /api/matches/{id}/video-info`, `GET /api/matches/{id}/frame?frame=N` (JPEG mit `Cache-Control: immutable`), `GET/POST /api/labeling/datasets`, `GET/POST /api/labeling/datasets/{ds}/annotations`, `DELETE /api/labeling/datasets/{ds}/annotations/{match_id}/{frame}`, `POST /api/labeling/datasets/{ds}/export`. Validierung: Datensatz-Namen `[a-z0-9_-]` (Path-Traversal-Schutz), BBox-Felder 0..1 + innerhalb des Bildes, Frame-Index im Video.
+- **Frontend:** Route `/labeling` (Datensatz wählen/erstellen → Video wählen → Workbench `FrameLabeler.tsx`), BBox per Maus-Ziehen, **mehrere Boxen pro Frame** (jede Box einzeln per ×-Button entfernbar, „Alle löschen"-Button), Auto-Speichern mit kurzer Verzögerung nach der **letzten** gezeichneten Box (unterbrechbar durch weitere Boxen – Hinweis „Speichert automatisch…" wird angezeigt), „Kein Ball"-Markierung (N), vorhandene Annotationen werden beim Navigieren angezeigt (überschreibbar/löschbar), Frame-Vorladen des nächsten Bildes, Shortcuts (←/→ Frame, Shift+←/→ 1s, N kein Ball, ⏎ speichern), DE/EN-übersetzt, Nav-Link „Labeling" in der Kopfzeile.
+- **Trainings-Vorbereitung:** `train_yolo.py` (YOLOv8n, auf 2 GB VRAM ausgelegt: batch=8, imgsz=640, AMP; OOM-Fallbacks dokumentiert), `export_onnx.py` (ONNX opset 12, dynamic batch) → Ziel: `data/models/ball_yolov8n.onnx`. Vollständige Schritt-für-Schritt-Anleitung in `backend/ml/README.md` (Linux Mint, CUDA-Check, Fehlerbehebung).
+
+**Meilensteine (Rest):**
+
+1. Datensatz zusammenstellen (verschiedene Beleuchtungen, Winkel, weiße/orange Bälle)
+2. Modell trainieren (YOLOv8n auf GTX 1050)
+3. Integration in Rally-Erkennung (Ball-Tracking als zusätzlicher Input, Fallback auf Heuristik)
+4. Evaluation (Precision/Recall auf Test-Videos)
 
 **Erwartete Verbesserungen:**
 
@@ -631,19 +643,20 @@ ttlab/data/
 
 #### GitHub-Repository Setup
 
-**Status:** Repository existiert (https://github.com/EtwasJonas/TTLab) – **V0.5-Änderungen sind noch nicht committet**
+**Status:** Repository existiert (https://github.com/EtwasJonas/TTLab) – **V0.5 ist committet und gepusht** (Commit `4b75c00` "V0.5: Parallel analysis, bounce filter, highlight calibration, WMP fix").
 
-**Aktuelle uncommittete Änderungen (Stand V0.5):**
+**Neu seit V0.5-Commit (uncommittet):**
 
-- Geändert: `backend/app/database.py`, `main.py`, `rally_detection.py`, `video_processor.py`, `frontend/app/page.tsx`, `frontend/components/MatchDetail.tsx`, `MatchList.tsx`, `VideoUpload.tsx`, `frontend/lib/translations.ts`, diverse README/Doku-Dateien
-- Neu: `frontend/lib/api.ts`, `frontend/lib/types.ts`
-- Gelöscht: `DOKUMENTATION_VIDEO_EXPORT.md` (veraltet)
+- Neu: `install-TTLab.bat` (One-Click-Installer für Endanwender, siehe Roadmap)
+- Neu: `TTLab starten.bat` (im Repo, war bisher nur auf dem Desktop vorhanden)
+- Neu (V0.6 Phase 1): `backend/app/labeling.py`, Labeling-API in `main.py` + `schemas.py`, `frontend/app/labeling/page.tsx`, `frontend/components/FrameLabeler.tsx`, `frontend/lib/types.ts` erweitert, `backend/ml/` (train_yolo.py, export_onnx.py, README.md)
+- Aktualisiert: `README.md`, `README.de.md` (vereinfachte Installation), `PROJEKTUEBERGABE.md` (Roadmap V0.9: One-File-.exe, V0.6-Status)
 
-**Commit-Vorschlag für V0.5:**
+**Commit-Vorschlag:**
 
 ```bash
 git add -A
-git commit -m "V0.5: Parallelisierte Analyse, Bounce-Filter, Highlight-Kalibrierung, UX"
+git commit -m "V0.6 Phase 1: Labeling-Tool (Frame-Extraktion, YOLO-Datensatz, Export), Trainings-Skripte, One-Click-Installer"
 git push
 ```
 
@@ -835,11 +848,15 @@ alembic upgrade head
 
 | Feature | Status | Priorität | Aufwand |
 |---------|--------|-----------|---------|
-| V0.5-Änderungen committen & pushen | 🟡 Offen | Hoch | 0.5h |
-| Labeling Tool | ⚪ Pending | Hoch | 8h |
-| Datensatz sammeln (500-1000 Frames) | ⚪ Pending | Hoch | 4h |
-| YOLOv8n Training | ⚪ Pending | Hoch | 6h |
-| Ball-Tracking Integration | ⚪ Pending | Hoch | 12h |
+| ~~V0.5-Änderungen committen & pushen~~ | ✅ Erledigt (Commit `4b75c00`) | - | - |
+| ~~One-Click-Installer `install-TTLab.bat`~~ | ✅ Erledigt (winget-basiert) | - | - |
+| ~~README vereinfachen (Installation für Laien)~~ | ✅ Erledigt (DE + EN) | - | - |
+| ~~Labeling Tool~~ | ✅ Erledigt (Phase 1 V0.6, siehe Versionshistorie) | - | - |
+| ~~Trainings-Skripte (train_yolo.py, export_onnx.py)~~ | ✅ Erledigt | - | - |
+| Datensatz sammeln (500-1000 Frames) | 🟡 User-Aufgabe | Hoch | 1.5h |
+| YOLOv8n Training | 🟡 User-Aufgabe (GTX-1050-Desktop) | Hoch | 4h |
+| Ball-Tracking Integration (Phase 2) | ⚪ Pending | Hoch | 12h |
+| Evaluation Heuristik vs. ML (Phase 3) | ⚪ Pending | Hoch | 4h |
 
 ### Mittelfristig (Q4 2026)
 
@@ -855,11 +872,26 @@ alembic upgrade head
 
 | Feature | Status | Priorität | Aufwand |
 |---------|--------|-----------|---------|
+| One-File-Desktop-App (.exe) – **V0.9** | ⚪ Pending | Hoch | 16h |
 | Multi-Camera Support | ⚪ Pending | Niedrig | 24h |
 | 3D-Trajektorie Rekonstruktion | ⚪ Pending | Niedrig | 32h |
 | Cloud-Sync (optional) | ⚪ Pending | Niedrig | 16h |
 | Plugin-System für Erweiterungen | ⚪ Pending | Niedrig | 20h |
 | Mobile App (React Native) | ⚪ Pending | Niedrig | 40h |
+
+#### V0.9: One-File-Desktop-App (.exe)
+
+**Ziel:** Ein einzelner Installer bzw. eine einzelne `TTLab.exe`, die ohne Python, Node.js oder FFmpeg-Vorinstallation läuft – TTLab per Doppelklick nutzbar wie eine normale Desktop-App.
+
+**Geplanter Ansatz (Web-UI bleibt erhalten!):**
+
+1. Frontend als statischen Build exportieren (`next build` mit `output: 'export'`) und vom FastAPI-Backend via `StaticFiles` ausliefern – nur noch ein Server-Prozess
+2. Backend mit **PyInstaller** packen (inkl. OpenCV, onnxruntime, ML-Modell)
+3. FFmpeg einbetten (Lizenz GPL/LGPL beachten, ~100 MB) oder beim ersten Start automatisch herunterladen
+4. EXe startet Server auf localhost und öffnet automatisch den Browser
+5. Optional: Installer mit Inno Setup, Auto-Update-Mechanismus
+
+**Bewertung:** Sehr sinnvoll für die Zielgruppe (Trainer/Spieler ohne IT-Hintergrund). Aufwand ~16h. Bewusst ans Projektende geplant (V0.9), weil sich die Dependencies bis dahin ändern (onnxruntime, ML-Modelle) und der Installer sonst jede Version neu gebaut und getestet werden müsste. Zwischenlösung bis dahin: `install-TTLab.bat` (umgesetzt).
 
 ---
 
@@ -880,19 +912,25 @@ ttlab/
 │   │
 │   ├── venv/                    # Python Virtual Environment (nicht versioniert)
 │   ├── reencode_clips.py        # Einmal-Migration: 10-bit-Clips → 8-bit yuv420p (WMP-Fix)
-│   ├── pyproject.toml           # Python Dependencies (uv)
-│   └── uv.lock                  # Dependency Lockfile
+│   ├── ml/                      # V0.6: Trainings-Skripte (laufen auf dem Trainings-PC, nicht auf dem Server)
+│   │   ├── train_yolo.py        #   YOLOv8n-Training (GTX 1050, 2 GB VRAM)
+│   │   ├── export_onnx.py       #   best.pt → data/models/ball_yolov8n.onnx
+│   │   └── README.md            #   Schritt-für-Schritt-Anleitung (Linux Mint)
+│   ├── requirements.txt         # Python Dependencies
+│   └── .env                     # Lokale Konfiguration (nicht versioniert)
 │
 ├── frontend/
 │   ├── app/
-│   │   ├── layout.tsx           # Root Layout mit Providers
+│   │   ├── layout.tsx           # Root Layout mit Providers + Navigation
 │   │   ├── page.tsx             # Dashboard (Match-Liste, Stats, Polling)
+│   │   ├── labeling/page.tsx    # V0.6: Labeling-Tool (Datensatz/Video-Auswahl, Export)
 │   │   └── globals.css          # Globale Styles (Tailwind)
 │   │
 │   ├── components/
 │   │   ├── MatchList.tsx        # Match-Übersicht mit Filter
 │   │   ├── MatchDetail.tsx      # Detail-View mit Player, Shortcuts, Highlights
 │   │   ├── VideoUpload.tsx      # Upload (Drag & Drop)
+│   │   ├── FrameLabeler.tsx     # V0.6: Labeling-Workbench (Frame-Navigation, BBox-Zeichnung)
 │   │   ├── LanguageSwitcher.tsx # DE/EN-Umschalter + Shortcuts-Button
 │   │   └── ShortcutsModal.tsx   # Tastatur-Shortcuts-Übersicht
 │   │
@@ -911,6 +949,8 @@ ttlab/
 ├── data/                        # NICHT versioniert (.gitignore)
 │   ├── videos/                  # Originalvideos (hochgeladen von Usern)
 │   ├── clips/                   # Extrahierte Rally-Clips
+│   ├── datasets/                # V0.6: Labeling-Datensätze (raw/ + yolo-Export)
+│   ├── models/                  # V0.6: trainierte ONNX-Modelle (ball_yolov8n.onnx)
 │   └── db/
 │       └── ttlab.db             # SQLite Datenbank
 │
@@ -918,7 +958,9 @@ ttlab/
 ├── .gitignore                   # Ausschlussregeln (data/, venv/, node_modules/)
 ├── .gitattributes               # Line Endings (LF für Code, CRLF für .bat)
 ├── README.md                    # Projektübersicht & Quickstart
-├── TTLab starten.bat            # Windows Startup-Skript (Desktop)
+├── README.de.md                 # Deutsche Projektübersicht & Quickstart
+├── install-TTLab.bat            # One-Click-Installer für Endanwender (winget-basiert)
+├── TTLab starten.bat            # Start-Skript (Backend + Frontend + Browser)
 └── PROJEKTUEBERGABE.md          # Dieses Dokument (ausführliche Dokumentation)
 ```
 
@@ -955,6 +997,14 @@ Production:  http://<server-ip>:8000
 | PATCH | `/api/rallies/{id}` | Rally aktualisieren (Validierung, Notiz, manuelles Highlight) |
 | GET | `/api/clips/{clip_filename}` | Clip streamen (Range-Support) |
 | GET | `/api/videos/{video_filename}` | Originalvideo streamen (Range-Support) |
+| GET | `/api/matches/{id}/video-info` | **Neu (V0.6):** Video-Metadaten (fps, Frame-Anzahl) für Labeling-UI |
+| GET | `/api/matches/{id}/frame?frame=N` | **Neu (V0.6):** Einzelnen Frame als JPEG (server-seitig extrahiert, HEVC-fähig) |
+| GET | `/api/labeling/datasets` | **Neu (V0.6):** Alle Datensätze mit Statistiken |
+| POST | `/api/labeling/datasets` | **Neu (V0.6):** Datensatz erstellen |
+| GET | `/api/labeling/datasets/{ds}/annotations` | **Neu (V0.6):** Alle Annotationen eines Datensatzes |
+| POST | `/api/labeling/datasets/{ds}/annotations` | **Neu (V0.6):** Frame-Annotation speichern (überschreibt vorhandene) |
+| DELETE | `/api/labeling/datasets/{ds}/annotations/{match_id}/{frame}` | **Neu (V0.6):** Annotation löschen |
+| POST | `/api/labeling/datasets/{ds}/export` | **Neu (V0.6):** YOLO-Trainingslayout erstellen (train/val-Split + data.yaml) |
 | GET | `/api/health` | Health Check |
 
 **Hinweis:** Match- und Rally-IDs sind Integer (nicht UUID). Match-Status: `pending`, `processing`, `completed`, `failed`.
@@ -1543,6 +1593,8 @@ ALTER TABLE rallies ADD COLUMN landing_position JSON; -- {x, y} Koordinaten
 ---
 
 ## Setup & Installation
+
+> **Endanwender:** Doppelklick auf `install-TTLab.bat` im Projektordner – installiert Python, Node.js und FFmpeg automatisch (falls fehlt) und richtet alles ein. Das folgende Kapitel beschreibt die manuelle Installation für Entwickler.
 
 ### Voraussetzungen
 
@@ -2206,14 +2258,15 @@ export default function RallyTimeline({
 
 ### Sofort (nächster Chat: Start V0.6)
 
-1. **V0.5 committen & pushen**
-   - `git add -A && git commit -m "V0.5: Parallelisierte Analyse, Bounce-Filter, Highlight-Kalibrierung, UX" && git push`
-   - `frontend/tsconfig.tsbuildinfo` vorher prüfen (Build-Artefakt, ggf. aus .gitignore aufnehmen)
+1. **Vorbereitungs-Änderungen committen & pushen**
+   - One-Click-Installer (`install-TTLab.bat`), `TTLab starten.bat` im Repo, vereinfachtes README (DE/EN), Roadmap-Ergänzung V0.9 (.exe)
+   - `git add -A && git commit -m "V0.6 prep: One-Click-Installer, vereinfachtes README, Roadmap V0.9" && git push`
 
 2. **V0.6 Planning finalisieren (Ball-Tracking-Modell)**
-   - Labeling-Tool spezifizieren (welche Annotationen?)
-   - Datensatz-Strategie (eigene Videos vs. öffentliche Datensätze?)
-   - Modell-Auswahl (YOLOv8n vs. RT-DETR)
+   - ~~Labeling-Tool spezifizieren~~ → integriert ins TTLab-Frontend (Route `/labeling`), Backend extrahiert Frames server-seitig (Browser kann kein HEVC/10-bit dekodieren)
+   - ~~Datensatz-Strategie~~ → eigene Videos, gelabelt mit dem integrierten Tool
+   - ~~Modell-Auswahl~~ → YOLOv8n, Training auf GTX-1050-Desktop (Linux Mint, CUDA, `batch=8, imgsz=640` für 2 GB VRAM)
+   - Integration: ONNX Runtime im Backend (kein torch!), `HeuristicBallDetector` bleibt als Fallback vollständig erhalten
 
 ### V0.6 (Ball-Tracking-Modell)
 
