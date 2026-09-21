@@ -489,7 +489,7 @@ ttlab/data/
 **Geplante Inhalte:**
 
 - [x] Integriertes Labeling-Tool (Frontend-Route `/labeling`, server-seitige Frame-Extraktion – der Browser kann HEVC Main 10 nicht dekodieren)
-- [x] Trainings-Export (YOLO-Layout mit deterministischem 80/20 train/val-Split + `data.yaml`)
+- [x] Trainings-Export (YOLO-Layout mit deterministischem 80/20 train/val-Split + portabler `data.yaml` mit relativem Pfad) inkl. **ZIP-Download** (`GET /api/labeling/datasets/{ds}/download`) – nach dem Export wird der Download automatisch gestartet, Button für erneuten Download vorhanden
 - [x] Trainings-Skripte für den GTX-1050-Desktop (`backend/ml/train_yolo.py`, `export_onnx.py`, Anleitung `backend/ml/README.md`)
 - [ ] Datensatz sammeln: 500–1000 Frames manuell annotieren (User-Aufgabe, ~1–1,5h)
 - [ ] Modell trainieren (User-Aufgabe auf dem Linux-Mint-Desktop, ~2–4h)
@@ -502,7 +502,10 @@ ttlab/data/
 - **Datensatz-Struktur:** `data/datasets/<name>/raw/{images,labels}/` + `annotations.json`; Export erstellt `yolo/{images,labels}/{train,val}/` + `data.yaml` (Hardlinks statt Kopien – kein doppelter Speicherplatz, deterministischer Split per Seed).
 - **API-Endpunkte (alle verifiziert):** `GET /api/matches/{id}/video-info`, `GET /api/matches/{id}/frame?frame=N` (JPEG mit `Cache-Control: immutable`), `GET/POST /api/labeling/datasets`, `GET/POST /api/labeling/datasets/{ds}/annotations`, `DELETE /api/labeling/datasets/{ds}/annotations/{match_id}/{frame}`, `POST /api/labeling/datasets/{ds}/export`. Validierung: Datensatz-Namen `[a-z0-9_-]` (Path-Traversal-Schutz), BBox-Felder 0..1 + innerhalb des Bildes, Frame-Index im Video.
 - **Frontend:** Route `/labeling` (Datensatz wählen/erstellen → Video wählen → Workbench `FrameLabeler.tsx`), BBox per Maus-Ziehen, **mehrere Boxen pro Frame** (jede Box einzeln per ×-Button entfernbar, „Alle löschen"-Button), Auto-Speichern mit kurzer Verzögerung nach der **letzten** gezeichneten Box (unterbrechbar durch weitere Boxen – Hinweis „Speichert automatisch…" wird angezeigt), „Kein Ball"-Markierung (N), vorhandene Annotationen werden beim Navigieren angezeigt (überschreibbar/löschbar), Frame-Vorladen des nächsten Bildes, Shortcuts (←/→ Frame, Shift+←/→ 1s, N kein Ball, ⏎ speichern), DE/EN-übersetzt, Nav-Link „Labeling" in der Kopfzeile.
-- **Trainings-Vorbereitung:** `train_yolo.py` (YOLOv8n, auf 2 GB VRAM ausgelegt: batch=8, imgsz=640, AMP; OOM-Fallbacks dokumentiert), `export_onnx.py` (ONNX opset 12, dynamic batch) → Ziel: `data/models/ball_yolov8n.onnx`. Vollständige Schritt-für-Schritt-Anleitung in `backend/ml/README.md` (Linux Mint, CUDA-Check, Fehlerbehebung).
+
+**Kritischer CSS-Fix (20.09.2026):** `postcss.config.mjs` nutzte `@tailwindcss/postcss` – das **Tailwind-v4-Plugin** – während `globals.css` v3-Direktiven (`@tailwind base/components/utilities`) und `tailwind.config.ts` die v3-Config enthält. Das v4-Plugin emittiert bei v3-Direktiven **kein Theme**: Alle Theme-abhängigen Utilities (Spacing `p-*`, Farben `bg-*`/`text-*`/`border-*`, `rounded-*`, `inset-0`, Schriftgrößen) fehlten im kompilierten CSS – nur 107 statt 332 Regeln. Folge: Der Zeichen-Overlay im Labeling-Tool hatte Größe 0×0 (kein `inset-0`), das Zeichnen war unmöglich. **Fix:** postcss.config zurück auf das v3-Plugin (`tailwindcss: {}`, dem die Config + Direktiven entsprechen), `@tailwindcss/postcss` deinstalliert. Verifiziert per isoliertem PostCSS-Test beider Varianten, CSS-Audit im echten Browser (v3: 332 Regeln, alle Utilities) und vollständigem E2E-Browser-Test des Zeichen-Workflows (Headless Edge via puppeteer-core): Overlay-Größe, Zieh-Vorschau, Box-Erstellung, Auto-Save, Backend-Persistenz, „gelabelt"-Badge – alles grün. Zusätzlich `data-testid`-Anker im Workbench für wiederverwendbare UI-Tests.
+- **Trainings-Vorbereitung:** `train_yolo.py` (YOLOv8n, auf 2 GB VRAM ausgelegt: batch=8, imgsz=640, AMP; OOM-Fallbacks dokumentiert), `export_onnx.py` (ONNX opset 12, dynamic batch) → Ziel: `data/models/ball_yolov8n.onnx`. Vollständige Schritt-für-Schritt-Anleitung in `backend/ml/README.md` (Linux Mint, CUDA-Check, Fehlerbehebung). **Datensatz-Transfer:** Export lädt automatisch eine ZIP herunter (`GET /api/labeling/datasets/{ds}/download`), `data.yaml` mit relativem Pfad (portabel auf jedem Rechner).
+- **Scroll-Stabilität (UX):** Frame-Container im Labeling-Tool reserviert das Video-Seitenverhältnis per `aspectRatio` (kein Layout-Kollaps beim Laden), das Frame-`<img>` wird nicht mehr per `key` neu gemountet, sondern nur die `src` getauscht (altes Bild bleibt sichtbar, bis das neue dekodiert ist) – die Scroll-Position bleibt beim ±Sekunden-Springen exakt erhalten. Clip-Player in MatchDetail ebenfalls mit reserviertem `aspect-video`. Per E2E-Browser-Test verifiziert (Scroll-Position nach 4 Sprüngen identisch).
 
 **Meilensteine (Rest):**
 
@@ -1004,7 +1007,8 @@ Production:  http://<server-ip>:8000
 | GET | `/api/labeling/datasets/{ds}/annotations` | **Neu (V0.6):** Alle Annotationen eines Datensatzes |
 | POST | `/api/labeling/datasets/{ds}/annotations` | **Neu (V0.6):** Frame-Annotation speichern (überschreibt vorhandene) |
 | DELETE | `/api/labeling/datasets/{ds}/annotations/{match_id}/{frame}` | **Neu (V0.6):** Annotation löschen |
-| POST | `/api/labeling/datasets/{ds}/export` | **Neu (V0.6):** YOLO-Trainingslayout erstellen (train/val-Split + data.yaml) |
+| POST | `/api/labeling/datasets/{ds}/export` | **Neu (V0.6):** YOLO-Trainingslayout erstellen (train/val-Split + data.yaml mit relativem, portablen Pfad) |
+| GET | `/api/labeling/datasets/{ds}/download` | **Neu (V0.6):** Exportierten Datensatz als ZIP herunterladen (für Transfer auf den Trainings-PC) |
 | GET | `/api/health` | Health Check |
 
 **Hinweis:** Match- und Rally-IDs sind Integer (nicht UUID). Match-Status: `pending`, `processing`, `completed`, `failed`.

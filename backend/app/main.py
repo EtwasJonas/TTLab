@@ -3,6 +3,7 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
+from starlette.background import BackgroundTask
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, func, or_, select
 from typing import List, Tuple
@@ -11,6 +12,8 @@ import uuid
 import json
 import time
 import subprocess
+import tempfile
+import zipfile
 import aiofiles
 import asyncio
 
@@ -758,6 +761,51 @@ async def export_labeling_dataset(dataset: str, payload: DatasetExport):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return result
+
+
+@app.get("/api/labeling/datasets/{dataset}/download")
+async def download_labeling_dataset(dataset: str):
+    """Download the exported YOLO dataset as a ZIP (for the training PC).
+
+    Contains the yolo/ folder (images, labels, data.yaml) - exactly what
+    train_yolo.py needs. The ZIP path is portable: data.yaml uses a
+    relative 'path', so training works wherever the archive is extracted.
+    """
+    try:
+        labeling.validate_dataset_name(dataset)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    yolo_dir = os.path.join(labeling.DATASETS_PATH, dataset, "yolo")
+    if not os.path.isfile(os.path.join(yolo_dir, "data.yaml")):
+        raise HTTPException(
+            status_code=400,
+            detail="Kein Export vorhanden - zuerst 'Trainings-Export erstellen' klicken",
+        )
+
+    def build_zip() -> str:
+        zip_path = os.path.join(tempfile.gettempdir(), f"ttlab_{dataset}_yolo.zip")
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as zf:
+            for root, _dirs, files in os.walk(yolo_dir):
+                for file_name in files:
+                    file_path = os.path.join(root, file_name)
+                    arcname = os.path.join(
+                        f"{dataset}_yolo", os.path.relpath(file_path, yolo_dir)
+                    )
+                    zf.write(file_path, arcname)
+        return zip_path
+
+    zip_path = await asyncio.to_thread(build_zip)
+
+    # Delete the temporary ZIP after the response has been sent.
+    return FileResponse(
+        zip_path,
+        media_type="application/zip",
+        filename=f"{dataset}_yolo.zip",
+        background=BackgroundTask(lambda: os.path.exists(zip_path) and os.remove(zip_path)),
+    )
 
 
 @app.get("/api/health")

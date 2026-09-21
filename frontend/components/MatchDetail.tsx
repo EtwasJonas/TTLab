@@ -738,13 +738,16 @@ export default function MatchDetail({ match, rallies, onRefresh, onStartAnalysis
                   </button>
                 </div>
               </div>
+              {/* aspect-video reserves the player's space so switching
+                  rallies (new clip src) never collapses the layout and
+                  shifts the page scroll position. */}
               <video
                 ref={videoRef}
                 src={`${API_BASE}/api/clips/${currentRally.clip_filename}`}
                 controls
                 autoPlay
                 loop={loopEnabled}
-                className="w-full max-h-96 rounded"
+                className="aspect-video w-full max-h-96 rounded object-contain"
                 onPlay={() => {
                   onClipPlayStart?.();
                   setIsPlaying(true);

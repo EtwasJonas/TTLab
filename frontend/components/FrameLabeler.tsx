@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLanguage } from "../lib/LanguageContext";
 import { t } from "../lib/translations";
 import { apiUrl } from "../lib/api";
@@ -74,14 +74,22 @@ export default function FrameLabeler({
   const { language } = useLanguage();
   const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null);
   const [frameIndex, setFrameIndex] = useState(0);
-  const [imgLoaded, setImgLoaded] = useState(false);
+  // Which frame index is fully loaded. Tracking the INDEX (instead of a
+  // boolean) makes the state correct per render; the layout effect + onLoad
+  // together cover both cached (synchronous) and network (asynchronous)
+  // frame loads.
+  const [loadedFrame, setLoadedFrame] = useState<number | null>(null);
+  const imgLoaded = loadedFrame === frameIndex;
   const [boxes, setBoxes] = useState<NormalizedBox[]>([]);
   const [drag, setDrag] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [autoSave, setAutoSave] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Custom jump width in seconds for the ± buttons and Shift+Arrow keys.
+  const [jumpSeconds, setJumpSeconds] = useState(1);
   const overlayRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
   const autoSaveTimer = useRef<number | null>(null);
   const [autoSavePending, setAutoSavePending] = useState(false);
 
@@ -140,11 +148,19 @@ export default function FrameLabeler({
   // When the frame changes, show the existing annotation (if any) and
   // reset the drawing state. A pending auto-save is obsolete on a new frame.
   useEffect(() => {
-    setImgLoaded(false);
     clearAutoSaveTimer();
     setBoxes(currentAnnotation?.bboxes ? currentAnnotation.bboxes.map(yoloToBox) : []);
     setDrag(null);
   }, [frameIndex, currentAnnotation, clearAutoSaveTimer]);
+
+  // Cached frames can finish loading before React's onLoad fires; the
+  // layout effect catches those synchronous loads right after the src swap.
+  useLayoutEffect(() => {
+    const img = imgRef.current;
+    if (img && img.complete && img.naturalWidth > 0) {
+      setLoadedFrame(frameIndex);
+    }
+  }, [frameIndex, frameUrl]);
 
   // Never fire a delayed save after unmounting.
   useEffect(() => clearAutoSaveTimer, [clearAutoSaveTimer]);
@@ -155,6 +171,11 @@ export default function FrameLabeler({
       setFrameIndex(Math.max(0, Math.min(frameCount - 1, index)));
     },
     [frameCount]
+  );
+
+  const jumpFrames = useCallback(
+    (seconds: number) => Math.round(seconds * fps),
+    [fps]
   );
 
   const saveAnnotation = useCallback(
@@ -287,10 +308,10 @@ export default function FrameLabeler({
       }
       if (event.key === "ArrowLeft") {
         event.preventDefault();
-        goToFrame(event.shiftKey ? frameIndex - Math.round(fps) : frameIndex - 1);
+        goToFrame(event.shiftKey ? frameIndex - jumpFrames(jumpSeconds) : frameIndex - 1);
       } else if (event.key === "ArrowRight") {
         event.preventDefault();
-        goToFrame(event.shiftKey ? frameIndex + Math.round(fps) : frameIndex + 1);
+        goToFrame(event.shiftKey ? frameIndex + jumpFrames(jumpSeconds) : frameIndex + 1);
       } else if (event.key === "Enter") {
         event.preventDefault();
         if (boxes.length > 0) {
@@ -305,7 +326,7 @@ export default function FrameLabeler({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [boxes, clearAutoSaveTimer, fps, frameIndex, goToFrame, saveAnnotation]);
+  }, [boxes, clearAutoSaveTimer, fps, frameIndex, goToFrame, jumpFrames, jumpSeconds, saveAnnotation]);
 
   const dragPreview = drag
     ? {
@@ -347,27 +368,39 @@ export default function FrameLabeler({
         </p>
       )}
 
-      {/* Frame display with drawing overlay. The <img> defines the element
-          size (w-full h-auto), so the overlay rect always matches the
-          picture area exactly - normalized coords need no correction. */}
-      <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black">
+      {/* Frame display with drawing overlay. The container RESERVES the
+          video's aspect ratio (16:9 until the metadata arrives), so the
+          layout never collapses while a frame is loading - the page scroll
+          position stays exactly where it is when jumping between frames.
+          The <img> is NOT remounted per frame (no key): only its src is
+          swapped, so it keeps its dimensions and the previous frame stays
+          visible until the new one has decoded. */}
+      <div
+        className="relative overflow-hidden rounded-xl border border-white/10 bg-black"
+        style={{
+          aspectRatio: `${videoInfo?.width ?? 16} / ${videoInfo?.height ?? 9}`,
+        }}
+      >
         {!imgLoaded && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/60 text-sm text-slate-300">
+          // pointer-events-none: even if the loaded-state ever lags behind,
+          // this overlay must NEVER swallow the mouse events of the drawing
+          // area below (that made boxes invisible before this fix).
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-black/60 text-sm text-slate-300">
             {t(language, "labeling.workbench.loading")}
           </div>
         )}
-        {/* key forces a fresh <img> per frame; the browser cache (enabled by
-            the backend Cache-Control header) makes revisits instant. */}
         <img
-          key={frameIndex}
+          ref={imgRef}
           src={frameUrl}
           alt={`Frame ${frameIndex}`}
-          className="block w-full select-none"
+          className="absolute inset-0 h-full w-full select-none object-contain"
           draggable={false}
-          onLoad={() => setImgLoaded(true)}
+          onLoad={() => setLoadedFrame(frameIndex)}
+          onError={() => setError("Frame konnte nicht geladen werden")}
         />
         <div
           ref={overlayRef}
+          data-testid="draw-overlay"
           className="absolute inset-0 cursor-crosshair"
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
@@ -377,6 +410,7 @@ export default function FrameLabeler({
           {boxes.map((box, index) => (
             <div
               key={index}
+              data-testid="ball-box"
               className="absolute border-2 border-pink-400 bg-pink-400/20"
               style={{
                 left: `${box.x * 100}%`,
@@ -396,6 +430,7 @@ export default function FrameLabeler({
           ))}
           {dragPreview && (
             <div
+              data-testid="drag-preview"
               className="absolute border-2 border-dashed border-pink-300 bg-pink-300/10"
               style={dragPreview}
             />
@@ -411,10 +446,11 @@ export default function FrameLabeler({
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-2">
         <button
-          onClick={() => goToFrame(frameIndex - Math.round(fps))}
+          onClick={() => goToFrame(frameIndex - jumpFrames(jumpSeconds))}
           className="rounded-lg bg-white/[0.06] px-3 py-1.5 text-sm text-slate-300 hover:bg-white/[0.12]"
+          title={t(language, "labeling.workbench.jump_hint")}
         >
-          {t(language, "labeling.workbench.prev_second")}
+          −{jumpSeconds}s
         </button>
         <button
           onClick={() => goToFrame(frameIndex - 1)}
@@ -434,11 +470,31 @@ export default function FrameLabeler({
           {t(language, "labeling.workbench.next_frame")}
         </button>
         <button
-          onClick={() => goToFrame(frameIndex + Math.round(fps))}
+          onClick={() => goToFrame(frameIndex + jumpFrames(jumpSeconds))}
           className="rounded-lg bg-white/[0.06] px-3 py-1.5 text-sm text-slate-300 hover:bg-white/[0.12]"
+          title={t(language, "labeling.workbench.jump_hint")}
         >
-          {t(language, "labeling.workbench.next_second")}
+          +{jumpSeconds}s
         </button>
+        <input
+          type="number"
+          min={0.1}
+          max={60}
+          step={0.5}
+          value={jumpSeconds}
+          onChange={(e) => {
+            const value = Number(e.target.value);
+            if (!Number.isNaN(value)) {
+              // Keep manual input usable while typing (allow empty locally
+              // via the raw field, clamp on use) - clamp to 0.1..60 here so
+              // a value is always valid when jumping.
+              setJumpSeconds(Math.min(60, Math.max(0.1, value)));
+            }
+          }}
+          title={t(language, "labeling.workbench.jump_hint")}
+          className="w-16 rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-center font-mono text-sm text-slate-200 outline-none focus:border-blue-400/60"
+        />
+        <span className="text-xs text-slate-500">s</span>
 
         <span
           className={`rounded-full px-3 py-1 text-xs ${

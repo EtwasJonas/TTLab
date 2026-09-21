@@ -127,6 +127,11 @@ export default function LabelingPage() {
         })
       );
       await fetchDatasets();
+      // The export is prepared server-side; offer the ZIP download right
+      // away since the dataset usually needs to be moved to the training PC.
+      window.location.href = apiUrl(
+        `/api/labeling/datasets/${selectedDataset}/download`
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Export fehlgeschlagen");
     } finally {
@@ -193,13 +198,23 @@ export default function LabelingPage() {
                     {t(language, "labeling.dataset.without_ball")}
                   </p>
                 </div>
-                <button
-                  onClick={() => void exportDataset()}
-                  disabled={exporting || datasetStats.total_frames < 2}
-                  className="rounded-lg bg-emerald-500/20 px-4 py-2 text-sm font-medium text-emerald-300 hover:bg-emerald-500/30 disabled:opacity-50"
-                >
-                  {exporting ? "..." : t(language, "labeling.export.button")}
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => void exportDataset()}
+                    disabled={exporting || datasetStats.total_frames < 2}
+                    className="rounded-lg bg-emerald-500/20 px-4 py-2 text-sm font-medium text-emerald-300 hover:bg-emerald-500/30 disabled:opacity-50"
+                  >
+                    {exporting ? "..." : t(language, "labeling.export.button")}
+                  </button>
+                  {datasetStats.exported && (
+                    <a
+                      href={apiUrl(`/api/labeling/datasets/${selectedDataset}/download`)}
+                      className="rounded-lg bg-blue-500/20 px-4 py-2 text-sm font-medium text-blue-300 hover:bg-blue-500/30"
+                    >
+                      {t(language, "labeling.download.button")}
+                    </a>
+                  )}
+                </div>
               </div>
               <p className="mt-2 text-xs text-slate-500">
                 {t(language, "labeling.export.hint")}

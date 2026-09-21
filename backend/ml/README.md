@@ -29,15 +29,22 @@ In der Labeling-Ansicht des Datensatzes auf **„Trainings-Export erstellen"**
 klicken. Es entsteht `data/datasets/<name>/yolo/` mit `images/train`,
 `images/val`, `labels/...` und `data.yaml` (80/20-Split, deterministisch).
 
-### 3. Datensatz auf den Trainings-Rechner kopieren
+### 3. Datensatz auf den Trainings-Rechner übertragen
 
-```bash
-# z.B. per USB-Stick oder scp – der Ordner reicht aus:
-data/datasets/baelle_v1/
+Nach dem Klick auf **„Trainings-Export erstellen"** wird der Export erstellt und
+**automatisch als ZIP heruntergeladen** (alternativ später per Button
+„⬇ ZIP erneut herunterladen"). Die ZIP enthält den fertigen `yolo/`-Ordner:
+
+```
+v1-ml-training_yolo/
+├── data.yaml          (portabel: relativer Pfad, funktioniert überall)
+├── images/train/  +  images/val/
+└── labels/train/  +  labels/val/
 ```
 
-Der Trainings-Rechner braucht nur diesen Ordner + die beiden Skripte aus
-`backend/ml/` (gleiche relative Struktur: `<projekt>/data/datasets/...`).
+Diese ZIP auf dem Trainings-Rechner entpacken und den enthaltenen Ordner nach
+`<projekt>/data/datasets/<name>/yolo` legen (oder `--datasets-dir` beim
+Trainingsskript entsprechend setzen).
 
 ### 4. Umgebung einrichten (einmalig, Linux Mint)
 
