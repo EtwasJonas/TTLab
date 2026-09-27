@@ -3,6 +3,7 @@
 import { useLanguage } from '../lib/LanguageContext';
 import { t } from '../lib/translations';
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 interface ShortcutsModalProps {
   isOpen: boolean;
@@ -41,8 +42,13 @@ export default function ShortcutsModal({ isOpen, onClose }: ShortcutsModalProps)
     { key: '4', action: t(language, 'shortcuts.speed_15') },
   ];
 
-  return (
-    <div 
+  // Render via portal on document.body: this component is mounted inside
+  // the <nav> in the root layout, and the nav's backdrop-blur creates a
+  // containing block that would trap the "position: fixed" overlay inside
+  // the 76px-tall nav - clicks next to the modal would never reach the
+  // backdrop and the dialog would be cut off at the top.
+  return createPortal(
+    <div
       style={{
         position: 'fixed',
         top: 0,
@@ -58,21 +64,21 @@ export default function ShortcutsModal({ isOpen, onClose }: ShortcutsModalProps)
       }}
       onClick={onClose}
     >
-      <div 
-        className="bg-[#0a0e17] border border-white/10 rounded-2xl max-w-md w-full shadow-2xl mx-4"
+      <div
+        className="bg-[#0a0e17] border border-white/10 rounded-2xl max-w-md w-full shadow-2xl mx-4 my-8 max-h-[calc(100vh-4rem)] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold text-white">{t(language, 'shortcuts.title')}</h2>
-            <button 
+            <button
               onClick={onClose}
               className="text-slate-400 hover:text-white transition"
             >
               ✕
             </button>
           </div>
-          
+
           <div className="space-y-2">
             {shortcuts.map((shortcut, index) => (
               <div key={index} className="flex items-center justify-between py-2.5 border-b border-white/5 last:border-0">
@@ -91,6 +97,7 @@ export default function ShortcutsModal({ isOpen, onClose }: ShortcutsModalProps)
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

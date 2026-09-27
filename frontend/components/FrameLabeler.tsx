@@ -91,6 +91,10 @@ export default function FrameLabeler({
   const overlayRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const autoSaveTimer = useRef<number | null>(null);
+  // Failed load attempts for the CURRENT frame url (reset on every frame
+  // change and on success). Used to retry canceled loads a couple of times
+  // before showing a real error message.
+  const loadAttempts = useRef(0);
   const [autoSavePending, setAutoSavePending] = useState(false);
 
   // Annotations of the currently open video, for the progress display and
@@ -105,6 +109,16 @@ export default function FrameLabeler({
     return map;
   }, [matchAnnotations]);
   const currentAnnotation = annotationByFrame.get(frameIndex) ?? null;
+
+  // Most recently labeled frame of THIS video (by labeled_at timestamp),
+  // so the user can continue exactly where labeling stopped.
+  const lastLabeledFrame = useMemo(() => {
+    if (matchAnnotations.length === 0) return null;
+    const sorted = [...matchAnnotations].sort((a, b) =>
+      b.labeled_at.localeCompare(a.labeled_at)
+    );
+    return sorted[0].frame_index;
+  }, [matchAnnotations]);
 
   const frameCount = videoInfo?.frame_count ?? 0;
   const fps = videoInfo?.fps ?? 30;
@@ -161,6 +175,36 @@ export default function FrameLabeler({
       setLoadedFrame(frameIndex);
     }
   }, [frameIndex, frameUrl]);
+
+  // --- Load watchdog -------------------------------------------------------
+  // Rapidly swapping src (fast +/- jumps) can leave the <img> in a broken
+  // state: complete=true, naturalWidth=0 and NO further load/error event -
+  // the frame stays black until the src changes again. The watchdog detects
+  // that state shortly after a frame change and nudges the browser by
+  // re-assigning the src (served from cache, so this is instant).
+  useEffect(() => {
+    const img = imgRef.current;
+    if (!img) return;
+    loadAttempts.current = 0;
+
+    const isBroken = () => img.complete && img.naturalWidth === 0;
+    const nudge = () => {
+      loadAttempts.current += 1;
+      if (loadAttempts.current > 3) {
+        setError("Frame konnte nicht geladen werden");
+        return;
+      }
+      // Re-assigning src restarts the image load for the same URL.
+      img.src = frameUrl;
+    };
+
+    const timers = [500, 1200, 2500].map((delay) =>
+      window.setTimeout(() => {
+        if (isBroken()) nudge();
+      }, delay)
+    );
+    return () => timers.forEach((t) => window.clearTimeout(t));
+  }, [frameUrl]);
 
   // Never fire a delayed save after unmounting.
   useEffect(() => clearAutoSaveTimer, [clearAutoSaveTimer]);
@@ -395,8 +439,16 @@ export default function FrameLabeler({
           alt={`Frame ${frameIndex}`}
           className="absolute inset-0 h-full w-full select-none object-contain"
           draggable={false}
-          onLoad={() => setLoadedFrame(frameIndex)}
-          onError={() => setError("Frame konnte nicht geladen werden")}
+          onLoad={() => {
+            loadAttempts.current = 0;
+            setLoadedFrame(frameIndex);
+          }}
+          onError={() => {
+            // Canceled loads (src swapped mid-flight during fast jumping)
+            // also fire error events - retry a few times before reporting.
+            loadAttempts.current += 1;
+            if (loadAttempts.current > 3) setError("Frame konnte nicht geladen werden");
+          }}
         />
         <div
           ref={overlayRef}
@@ -476,6 +528,15 @@ export default function FrameLabeler({
         >
           +{jumpSeconds}s
         </button>
+        {lastLabeledFrame !== null && (
+          <button
+            onClick={() => goToFrame(lastLabeledFrame)}
+            className="rounded-lg bg-emerald-500/15 px-3 py-1.5 text-sm text-emerald-300 hover:bg-emerald-500/25"
+            title={t(language, "labeling.workbench.last_labeled_hint")}
+          >
+            ⏭ {t(language, "labeling.workbench.last_labeled")}
+          </button>
+        )}
         <input
           type="number"
           min={0.1}
