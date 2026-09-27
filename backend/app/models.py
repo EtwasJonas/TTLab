@@ -47,6 +47,9 @@ class Rally(Base):
     impact_count = Column(Integer, default=0)
     user_marked_highlight = Column(Boolean, default=False)
     notes = Column(Text, nullable=True)
+    # V0.6: which ball detector produced this rally
+    # ("heuristic_v0.5" or the ONNX model file name)
+    model_version = Column(String(50), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     match = relationship("Match", back_populates="rallies")

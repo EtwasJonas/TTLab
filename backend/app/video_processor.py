@@ -1,7 +1,11 @@
 import ffmpeg
 import os
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional
+
+import cv2
+import numpy as np
 
 
 def _parse_frame_rate(value: str) -> float:
@@ -14,6 +18,70 @@ def _parse_frame_rate(value: str) -> float:
         return float(value)
     except (ValueError, ZeroDivisionError):
         return 30.0
+
+
+# --- Display rotation helpers (shared by labeling tool and analysis) -------
+#
+# Phone videos (iPhone MOV) store the orientation in a display-matrix side
+# datum. Browsers/players apply it, OpenCV ignores it - so every frame read
+# via VideoCapture is rotated (e.g. upside down for a 180° video). Both the
+# labeling tool AND the rally analysis must therefore rotate frames to
+# display orientation, otherwise their coordinate systems disagree (the
+# table mask would sit on the wrong half of the frame).
+
+_rotation_cache: Dict[str, int] = {}
+_rotation_lock = threading.Lock()
+
+
+def get_display_rotation(video_path: str) -> int:
+    """Clockwise rotation (0/90/180/270) needed to show the video upright.
+
+    ffprobe conventions: the side_data rotation value is counter-clockwise
+    (e.g. -180), the legacy "rotate" tag is clockwise. Both are normalized
+    to clockwise degrees here.
+    """
+    with _rotation_lock:
+        cached = _rotation_cache.get(video_path)
+    if cached is not None:
+        return cached
+
+    rotation_clockwise = 0
+    try:
+        probe = ffmpeg.probe(video_path)
+        stream = next(
+            (s for s in probe.get("streams", []) if s.get("codec_type") == "video"),
+            None,
+        )
+        if stream:
+            for side_data in stream.get("side_data_list") or []:
+                if "rotation" in side_data:
+                    rotation_clockwise = int(-side_data["rotation"]) % 360
+                    break
+            else:
+                legacy = (stream.get("tags") or {}).get("rotate")
+                if legacy is not None:
+                    rotation_clockwise = int(legacy) % 360
+    except Exception as e:  # noqa: BLE001 - a broken probe must not break the caller
+        print(f"[WARNUNG] Rotations-Metadaten nicht lesbar ({video_path}): {e}")
+
+    with _rotation_lock:
+        _rotation_cache[video_path] = rotation_clockwise
+    return rotation_clockwise
+
+
+def rotate_frame(frame: np.ndarray, degrees: int) -> np.ndarray:
+    """Rotate a frame clockwise (0/90/180/270).
+
+    Returns the SAME array (no copy) for 0° so unrotated videos keep their
+    exact original pixel data and performance.
+    """
+    if degrees == 90:
+        return cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+    if degrees == 180:
+        return cv2.rotate(frame, cv2.ROTATE_180)
+    if degrees == 270:
+        return cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    return frame
 
 
 class VideoProcessor:

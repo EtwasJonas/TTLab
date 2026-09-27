@@ -2,12 +2,15 @@ import cv2
 import numpy as np
 import librosa
 from scipy import signal
-from typing import Callable, List, Tuple, Optional
+from typing import Callable, List, Tuple, Optional, Tuple
 import os
 import queue
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+
+from app.ball_detector import HeuristicBallDetector, create_ball_detector
+from app.video_processor import get_display_rotation, rotate_frame
 
 
 class RallyDetector:
@@ -103,6 +106,15 @@ class RallyDetector:
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         cap.release()
 
+        # Analyze frames in DISPLAY orientation (phone videos record with a
+        # display-matrix rotation that OpenCV ignores). The table points
+        # were calibrated on the rotated browser view, so the mask only
+        # matches when frames are rotated the same way. rotate_frame() is
+        # a no-op for 0° (no copy) - unrotated videos stay bit-identical.
+        rotation = get_display_rotation(video_path)
+        if rotation in (90, 270):
+            width, height = height, width
+
         if max_width and width > max_width:
             scale = max_width / width
             proc_width = max_width
@@ -131,6 +143,7 @@ class RallyDetector:
             outside_area = max(int(cv2.countNonZero(inv_mask)), 1)
 
         def to_gray(frame: np.ndarray) -> np.ndarray:
+            frame = rotate_frame(frame, rotation)
             if scale != 1.0:
                 frame = cv2.resize(frame, (proc_width, proc_height), interpolation=cv2.INTER_AREA)
             return cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -298,6 +311,12 @@ class RallyDetector:
 
         # Motion and audio run in parallel: audio decoding happens in a
         # subprocess and barely competes for CPU with the motion pipeline.
+        # The ball detector is created ONCE per analysis so every worker
+        # shares it (ML: one thread-safe ONNX session; heuristic: stateless).
+        ball_detector = create_ball_detector()
+        model_version = getattr(ball_detector, "model_version", "unknown")
+        print(f"Ball-Erkennung: {model_version}")
+
         pool = ThreadPoolExecutor(max_workers=2)
         try:
             t_motion = time.time()
@@ -357,6 +376,7 @@ class RallyDetector:
                         table_points,
                         ball_workers,
                         progress_callback,
+                        ball_detector,
                     )
                     print(f"Ball-Validierung: {time.time() - t_ball:.1f}s")
                     audio_ok = True
@@ -403,6 +423,9 @@ class RallyDetector:
                     "confidence": round(min(1.0, score), 3),
                     "validation_status": validation_status,
                     "ball_hits": ball_hits,
+                    # Which ball detector produced this result (V0.6):
+                    # "heuristic_v0.5" or the ONNX model file name.
+                    "model_version": model_version,
                 })
 
         max_score = max((r["score"] for r in accepted), default=0.0)
@@ -479,6 +502,7 @@ class RallyDetector:
         table_points: Optional[List[Tuple[float, float]]],
         ball_workers: int = 1,
         progress_callback: Optional[Callable[[float, str], None]] = None,
+        ball_detector=None,
     ) -> List[Tuple[float, float, float, int, int]]:
         """Group table-tennis impact sounds into points instead of motion blobs."""
         if len(peak_times) < 2:
@@ -524,6 +548,7 @@ class RallyDetector:
             table_points,
             max_workers=ball_workers,
             progress_callback=progress_callback,
+            ball_detector=ball_detector,
         )
 
         # Phase 3: assemble candidates in the original group order
@@ -560,18 +585,24 @@ class RallyDetector:
         table_points: Optional[List[Tuple[float, float]]],
         max_workers: int = 1,
         progress_callback: Optional[Callable[[float, str], None]] = None,
+        ball_detector=None,
     ) -> List[int]:
         """Validate ball visibility for all rally groups.
 
         Groups are validated in parallel (one persistent VideoCapture per
         worker pulling groups from a queue) instead of sequentially, with a
-        live progress report per finished group.
+        live progress report per finished group. ``ball_detector`` decides
+        between the ML model and the classic heuristic (see ball_detector.py);
+        the heuristic keeps V0.5 behaviour bit-identically.
         """
         n = len(peak_groups)
         if n == 0:
             return []
         if not table_points or len(table_points) != 4:
             return [0] * n
+
+        if ball_detector is None:
+            ball_detector = create_ball_detector()
 
         results = [0] * n
         total_done = [0]
@@ -589,7 +620,7 @@ class RallyDetector:
 
         workers = max(1, min(max_workers, n))
         if workers == 1:
-            release, scan = self._ball_scanner(video_path, table_points)
+            release, scan = self._ball_scanner(video_path, table_points, ball_detector)
             if scan is None:
                 return [0] * n
             try:
@@ -605,7 +636,7 @@ class RallyDetector:
             index_queue.put(i)
 
         def worker() -> None:
-            release, scan = self._ball_scanner(video_path, table_points)
+            release, scan = self._ball_scanner(video_path, table_points, ball_detector)
             if scan is None:
                 return
             try:
@@ -630,20 +661,30 @@ class RallyDetector:
         self,
         video_path: str,
         table_points: List[Tuple[float, float]],
+        ball_detector=None,
     ) -> Tuple[Optional[Callable[[], None]], Optional[Callable[[List[float]], int]]]:
         """Create a reusable ball scanner with its own VideoCapture."""
+        if ball_detector is None:
+            ball_detector = create_ball_detector()
+
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             return None, None
 
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+        # Frames are validated in DISPLAY orientation, matching the table
+        # calibration (browser view) and the ML training images from the
+        # labeling tool. For 90°/270° videos the rotated dims are swapped.
+        rotation = get_display_rotation(video_path)
+        mask_w, mask_h = (height, width) if rotation in (90, 270) else (width, height)
         polygon = np.array(
-            [[int(x * width), int(y * height)] for x, y in table_points],
+            [[int(x * mask_w), int(y * mask_h)] for x, y in table_points],
             dtype=np.int32,
         )
         # Build the table mask once per scanner instead of once per peak
-        mask = np.zeros((height, width), dtype=np.uint8)
+        mask = np.zeros((mask_h, mask_w), dtype=np.uint8)
         cv2.fillPoly(mask, [polygon], 255)
 
         def scan(peak_times: List[float]) -> int:
@@ -655,7 +696,10 @@ class RallyDetector:
                     before_ok, before, mid_ok, mid, after_ok, after = self._read_peak_frames_triple(cap, timestamp)
                 if not before_ok or not after_ok:
                     continue
-                if self._is_ball_candidate(before, mid if mid_ok else before, after, mask):
+                before = rotate_frame(before, rotation)
+                mid = rotate_frame(mid, rotation) if mid_ok else before
+                after = rotate_frame(after, rotation)
+                if ball_detector.is_ball_candidate(before, mid, after, mask):
                     hits += 1
             return hits
 
@@ -714,25 +758,12 @@ class RallyDetector:
         after: np.ndarray,
         mask: np.ndarray,
     ) -> bool:
-        """Detect a white, moving object inside the table area."""
-        before_gray = cv2.cvtColor(before, cv2.COLOR_BGR2GRAY)
-        mid_gray = cv2.cvtColor(mid, cv2.COLOR_BGR2GRAY)
-        after_gray = cv2.cvtColor(after, cv2.COLOR_BGR2GRAY)
+        """Backward-compatible delegate to the heuristic ball detector.
 
-        move1 = cv2.absdiff(before_gray, mid_gray)
-        move2 = cv2.absdiff(mid_gray, after_gray)
-        movement = cv2.addWeighted(move1, 0.5, move2, 0.5, 0)
-        _, movement_thresh = cv2.threshold(movement, 25, 255, cv2.THRESH_BINARY)
-
-        bright = cv2.inRange(after, np.array([180, 180, 180]), np.array([255, 255, 255]))
-
-        candidate_mask = cv2.bitwise_and(movement_thresh, bright)
-        candidate_mask = cv2.bitwise_and(candidate_mask, mask)
-        candidate_mask = cv2.morphologyEx(candidate_mask, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8))
-        candidate_mask = cv2.dilate(candidate_mask, np.ones((3, 3), np.uint8), iterations=1)
-
-        contours, _ = cv2.findContours(candidate_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        return any(3 <= cv2.contourArea(contour) <= 250 for contour in contours)
+        The logic itself now lives in ball_detector.HeuristicBallDetector
+        (V0.6 Phase 2) so heuristic and ML detection share one interface.
+        """
+        return HeuristicBallDetector().is_ball_candidate(before, mid, after, mask)
 
     def _resample_motion(self, motion_scores: np.ndarray, fps: float, target_times: np.ndarray) -> np.ndarray:
         motion_times = np.arange(len(motion_scores)) / fps

@@ -43,6 +43,7 @@ async def init_db():
             "impact_count": "INTEGER DEFAULT 0",
             "user_marked_highlight": "BOOLEAN DEFAULT FALSE",
             "notes": "TEXT",
+            "model_version": "VARCHAR(50)",
         }.items():
             if column not in existing_rally:
                 await conn.execute(text(f"ALTER TABLE rallies ADD COLUMN {column} {sql_type}"))

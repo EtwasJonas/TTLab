@@ -66,6 +66,7 @@ class RallyResponse(RallyBase):
     impact_count: int = 0
     user_marked_highlight: bool = False
     notes: Optional[str] = None
+    model_version: Optional[str] = None
     created_at: datetime
 
     class Config:

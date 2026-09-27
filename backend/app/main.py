@@ -219,6 +219,7 @@ def process_match_background_sync(match_id: int, mode: str = "background"):
                         validation_status=rally_data.get('validation_status', 'accepted'),
                         confidence=rally_data.get('confidence', 0.0),
                         impact_count=rally_data.get('impact_count', 0),
+                        model_version=rally_data.get('model_version'),
                     )
                     db.add(rally)
 
