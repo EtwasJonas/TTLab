@@ -8,12 +8,14 @@ venv/
 ENV/
 env/
 .venv
+.pytest_cache/
 
 # Node.js
 node_modules/
 .next/
 out/
 build/
+*.tsbuildinfo
 
 # Daten & Generated
 data/videos/
