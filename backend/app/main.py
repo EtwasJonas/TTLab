@@ -812,3 +812,62 @@ async def download_labeling_dataset(dataset: str):
 @app.get("/api/health")
 async def health_check():
     return {"status": "healthy", "version": "0.1.0"}
+
+
+# ---------------------------------------------------------------------------
+# Beenden-Button (Frontend-Kopfzeile): faehrt Backend + Frontend-Devserver
+# und die TTLab-Shell-Fenster herunter.
+# ---------------------------------------------------------------------------
+
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+_SHUTDOWN_SCRIPT = os.path.join(_PROJECT_ROOT, "shutdown_ttlab.ps1")
+
+
+@app.post("/api/shutdown")
+async def shutdown_ttlab(db: AsyncSession = Depends(get_db)):
+    """TTLab komplett beenden (Backend, Frontend-Devserver, Shell-Fenster).
+
+    Verweigert das Beenden, solange eine Videoanalyse laeuft - ein abgebrochenes
+    Analyse-Verarbeiten wuerde sonst Arbeit verlieren. Alles andere speichert
+    automatisch (Notizen-Debounce, Labeling-Auto-Save).
+    """
+    result = await db.execute(select(Match).where(Match.status == "processing"))
+    running = result.scalars().all()
+    if running:
+        names = [m.custom_title or m.original_filename for m in running]
+        titles = ", ".join(f"#{m.id} ({name})" for m, name in zip(running, names))
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Beenden abgelehnt: Es laeuft noch eine Videoanalyse. "
+                f"Warte, bis sie fertig ist. Betroffen: {titles}"
+            ),
+        )
+
+    if not os.path.isfile(_SHUTDOWN_SCRIPT):
+        raise HTTPException(
+            status_code=500,
+            detail=f"Shutdown-Skript nicht gefunden: {_SHUTDOWN_SCRIPT}",
+        )
+
+    # Detached: das Skript ueberlebt den Tod dieses Prozesses und raeumt
+    # danach auch den Frontend-Devserver und die Shell-Fenster weg.
+    # Wichtig: DETACHED_PROCESS + close_fds laesst powershell lautlos sterben
+    # (ungueltige Standard-Handles) - CREATE_NO_WINDOW + DEVNULL funktioniert.
+    subprocess.Popen(
+        [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            _SHUTDOWN_SCRIPT,
+            str(os.getpid()),
+        ],
+        creationflags=subprocess.CREATE_NO_WINDOW,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        close_fds=False,
+    )
+    return {"message": "TTLab wird beendet", "pid": os.getpid()}

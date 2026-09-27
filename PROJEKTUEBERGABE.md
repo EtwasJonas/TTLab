@@ -484,9 +484,27 @@ ttlab/data/
 
 ### V0.6 (In Entwicklung - Ball-Tracking-Modell YOLOv8n)
 
-**Status: Phase 1 (Labeling-Tool) abgeschlossen – 11. September 2026**
+**Status: Phase 1 abgeschlossen, Phase 2 (ML-Integration) umgesetzt & verifiziert – Tests eingecheckt (Stand 27.09.2026)**
 
-**Geplante Inhalte:**
+**Status Labeling (User): 618 Frames gelabelt** (517 mit Ball, 101 Negativ-Frames, Datensatz `v1-ml-training`, bereits exportiert) – Ziel ~600 erreicht. Training auf dem Desktop-PC steht aus.
+
+**Phase 2 – ML-Integration + Rotations-Fix (20.09.2026, umgesetzt & verifiziert):**
+
+- **Neu `app/ball_detector.py`:** `HeuristicBallDetector` (Logik 1:1 aus `RallyDetector._is_ball_candidate` übernommen; `RallyDetector._is_ball_candidate` ist jetzt dünner Delegat – alte Variante bleibt als Fallback dauerhaft erhalten) + `MLBallDetector` (onnxruntime, NUR CPU, thread-safe geteilte Session, Ultralytics-Letterbox-Preprocessing exakt nachgebildet, YOLOv8-Output-Interpretation `(B, 5, N)` mit Fallback `(B, N, 5)`, Confidence-Schwelle 0.30, Detection zählt wenn Zentrum im Tisch-Polygon). Factory `create_ball_detector()`: Modell in `data/models/*.onnx` (neuestes) → ML, sonst Heuristik; erzwingbar per `TTLAB_BALL_DETECTION=auto|ml|heuristic`; kaputtes Modell → Warnung + Heuristik (Analyse bricht nie ab).
+- **Rotations-Fix in der Analyse-Pipeline:** `extract_motion_features` und `_ball_scanner` lesen Frames jetzt in **Anzeige-Orientierung** (`video_processor.get_display_rotation/rotate_frame`, gemeinsam mit Labeling-Tool). Zuvor: Tisch-Maske lag bei 180°-iPhone-Videos um 180° versetzt (Tischmarkierung im Browser = rotiertes Koordinatensystem, Pipeline las rohe Frames). Beweis: 12/12 gelabelte Ball-Boxen passten nur auf rotierte Frames (4/12 auf rohe). Für 90°/270°-Videos werden die Mask-Masse getauscht; `rotate_frame()` ist bei 0° ein No-Op ohne Kopie.
+- **DB:** `rallies.model_version` (`heuristic_v0.5` bzw. ONNX-Dateiname) + Migration; `RallyResponse`-Schema erweitert; `main.py` schreibt die Version beim Speichern.
+- **`onnxruntime==1.20.1`** in requirements.txt (kein torch im Backend!).
+- **Verifikation (Skripte in `%TEMP%\opencode\phase2-verify\`):** Bit-Identität am unrotierten MP4 **bestanden** (Motion 9015 Werte exakt gleich, Ball-Hits identisch `[2,3,3,3,1,3,0,1]`) – der Refactor verändert V0.5-Ergebnisse unrotierter Videos garantiert nicht. Fallback-Tests bestanden (auto/heuristic/kaputtes Modell). Rotations-Fix gemessen: Ball-Hits bei Match 2 von Summe 21 → 12 – siehe offene Frage unten.
+
+**⚠️ OFFENE FRAGE (nächste Sitzung klären): Tisch-Maske = Tischplatte oder Spielzone?**
+Die korrekt platzierte Maske (Tischplatten-Polygon) erfasst den Ball nur bei Abpunkten – der Ball FLIEGT während Ballwechseln überwiegend im Luftraum ÜBER der Platte (ausserhalb des Polygons). Die vormals versehentlich gespiegelte Maske deckte zufällig diesen Luftraum ab (deshalb vorher MEHR Hits). Betroffen: Heuristik UND ML-Detector (ML prüft ebenfalls `Detection im Polygon`). **Empfohlene Entscheidung:** Masken-Semantik auf „Spielzone" erweitern (Polygon nach oben um ~1 Tischhöhe erweitern, konfigurierbar) und gegen die User-Ground-Truth validieren (Match 2 hat 118 manuell validierte Rallys in der DB: accepted/rejected). Dafür `rallies_from_audio_peaks`-Filter `ball_hits < 2 → Rally verwerfen` im Blick behalten. Bit-Identität gilt weiterhin NUR für unrotierte Videos mit unveränderter Masken-Semantik.
+
+**Phase 2 – noch offen:**
+- Masken-Semantik-Entscheidung (siehe oben) + Validierung gegen User-Ground-Truth
+- Echte ML-Verifikation: sobald `data/models/ball_yolov8n.onnx` vom Training existiert, komplette Analyse mit ML durchlaufen lassen und mit Heuristik + Ground-Truth vergleichen
+- Evaluationsskript `backend/ml/evaluate.py` (Precision/Recall Heuristik vs. ML, ursprünglich Phase 3)
+
+**Geplante Inhalte (zuvor V0.4.1):**
 
 - [x] Integriertes Labeling-Tool (Frontend-Route `/labeling`, server-seitige Frame-Extraktion – der Browser kann HEVC Main 10 nicht dekodieren)
 - [x] Trainings-Export (YOLO-Layout mit deterministischem 80/20 train/val-Split + portabler `data.yaml` mit relativem Pfad) inkl. **ZIP-Download** (`GET /api/labeling/datasets/{ds}/download`) – nach dem Export wird der Download automatisch gestartet, Button für erneuten Download vorhanden
@@ -506,6 +524,8 @@ ttlab/data/
 **Kritischer CSS-Fix (20.09.2026):** `postcss.config.mjs` nutzte `@tailwindcss/postcss` – das **Tailwind-v4-Plugin** – während `globals.css` v3-Direktiven (`@tailwind base/components/utilities`) und `tailwind.config.ts` die v3-Config enthält. Das v4-Plugin emittiert bei v3-Direktiven **kein Theme**: Alle Theme-abhängigen Utilities (Spacing `p-*`, Farben `bg-*`/`text-*`/`border-*`, `rounded-*`, `inset-0`, Schriftgrößen) fehlten im kompilierten CSS – nur 107 statt 332 Regeln. Folge: Der Zeichen-Overlay im Labeling-Tool hatte Größe 0×0 (kein `inset-0`), das Zeichnen war unmöglich. **Fix:** postcss.config zurück auf das v3-Plugin (`tailwindcss: {}`, dem die Config + Direktiven entsprechen), `@tailwindcss/postcss` deinstalliert. Verifiziert per isoliertem PostCSS-Test beider Varianten, CSS-Audit im echten Browser (v3: 332 Regeln, alle Utilities) und vollständigem E2E-Browser-Test des Zeichen-Workflows (Headless Edge via puppeteer-core): Overlay-Größe, Zieh-Vorschau, Box-Erstellung, Auto-Save, Backend-Persistenz, „gelabelt"-Badge – alles grün. Zusätzlich `data-testid`-Anker im Workbench für wiederverwendbare UI-Tests.
 - **Trainings-Vorbereitung:** `train_yolo.py` (YOLOv8n, auf 2 GB VRAM ausgelegt: batch=8, imgsz=640, AMP; OOM-Fallbacks dokumentiert), `export_onnx.py` (ONNX opset 12, dynamic batch) → Ziel: `data/models/ball_yolov8n.onnx`. Vollständige Schritt-für-Schritt-Anleitung in `backend/ml/README.md` (Linux Mint, CUDA-Check, Fehlerbehebung). **Datensatz-Transfer:** Export lädt automatisch eine ZIP herunter (`GET /api/labeling/datasets/{ds}/download`), `data.yaml` mit relativem Pfad (portabel auf jedem Rechner).
 - **Scroll-Stabilität (UX):** Frame-Container im Labeling-Tool reserviert das Video-Seitenverhältnis per `aspectRatio` (kein Layout-Kollaps beim Laden), das Frame-`<img>` wird nicht mehr per `key` neu gemountet, sondern nur die `src` getauscht (altes Bild bleibt sichtbar, bis das neue dekodiert ist) – die Scroll-Position bleibt beim ±Sekunden-Springen exakt erhalten. Clip-Player in MatchDetail ebenfalls mit reserviertem `aspect-video`. Per E2E-Browser-Test verifiziert (Scroll-Position nach 4 Sprüngen identisch).
+- **Frame-Lade-Watchdog (Bugfix):** Schnelles ±Springen konnte das `<img>` in einen kaputten Browser-Zustand versetzen (`complete=true`, `naturalWidth=0`, kein weiteres Load-Event → Frame bleibt schwarz, bis man erneut springt). Ein Watchdog prüft 500/1200/2500 ms nach jedem Frame-Wechsel diesen Zustand und stößt den Ladevorgang per Neu-Zuweisung der `src` an (aus dem Cache, sofort sichtbar); abgebrochene Loads feuern Error-Events, die bis zu 3× still wiederholt werden, bevor eine Fehlermeldung erscheint. E2E-verifiziert: 3 Rapid-Szenarien (6× +1s, 10× Frame▶, gemischt vor/zurück) laden danach zuverlässig.
+- **„Letzter gelabelter Frame"-Button:** Springt zum zuletzt gelabelten Frame des aktuellen Videos (nach `labeled_at` sortiert) – zum Weitermachen nach einer Pause; gespeicherte Box + „gelabelt"-Status werden dort angezeigt. E2E-verifiziert.
 
 **Meilensteine (Rest):**
 
@@ -856,10 +876,12 @@ alembic upgrade head
 | ~~README vereinfachen (Installation für Laien)~~ | ✅ Erledigt (DE + EN) | - | - |
 | ~~Labeling Tool~~ | ✅ Erledigt (Phase 1 V0.6, siehe Versionshistorie) | - | - |
 | ~~Trainings-Skripte (train_yolo.py, export_onnx.py)~~ | ✅ Erledigt | - | - |
-| Datensatz sammeln (500-1000 Frames) | 🟡 User-Aufgabe | Hoch | 1.5h |
-| YOLOv8n Training | 🟡 User-Aufgabe (GTX-1050-Desktop) | Hoch | 4h |
-| Ball-Tracking Integration (Phase 2) | ⚪ Pending | Hoch | 12h |
-| Evaluation Heuristik vs. ML (Phase 3) | ⚪ Pending | Hoch | 4h |
+| Datensatz sammeln (500-1000 Frames) | ✅ Erledigt: 618 Frames (517 Ball / 101 Negativ), exportiert | - | - |
+| YOLOv8n Training | 🟡 User-Aufgabe (GTX-1050-Desktop), ZIP-Download bereit | Hoch | 4h |
+| ~~Ball-Tracking Integration (Phase 2)~~ | ✅ Code fertig & verifiziert (offen: Masken-Semantik, ML-Realtest) | - | - |
+| Evaluation Heuristik vs. ML (Phase 3) | ⚪ Pending (braucht trainiertes Modell) | Hoch | 4h |
+| E2E-Tests ins Repo (Paket 2) | ✅ Erledigt (27.09.2026): `frontend/e2e/`, `npm run e2e`, 6/6 grün | - | - |
+| pytest-Backend-Tests (Paket 3) | ✅ Erledigt (27.09.2026): `backend/tests/`, 48/48 grün, `requirements-dev.txt` | - | - |
 
 ### Mittelfristig (Q4 2026)
 
@@ -910,7 +932,9 @@ ttlab/
 │   │   ├── models.py            # SQLAlchemy Modelle (Match, Rally)
 │   │   ├── database.py          # DB-Connection, Sessions, Migration-Logik
 │   │   ├── rally_detection.py   # RallyDetector Klasse (Motion, Audio, Ball)
-│   │   ├── video_processor.py   # FFmpeg Wrapper für Clip-Extraktion
+│   │   ├── ball_detector.py     # V0.6: Ball-Erkennung (Heuristik + ML/ONNX + Fallback)
+│   │   ├── labeling.py          # V0.6: Labeling-Backend (Frames, Datensätze, Export)
+│   │   ├── video_processor.py   # FFmpeg Wrapper + Rotations-Helfer (get_display_rotation)
 │   │   └── schemas.py           # Pydantic Schemas für Request/Response
 │   │
 │   ├── venv/                    # Python Virtual Environment (nicht versioniert)
@@ -1009,6 +1033,7 @@ Production:  http://<server-ip>:8000
 | DELETE | `/api/labeling/datasets/{ds}/annotations/{match_id}/{frame}` | **Neu (V0.6):** Annotation löschen |
 | POST | `/api/labeling/datasets/{ds}/export` | **Neu (V0.6):** YOLO-Trainingslayout erstellen (train/val-Split + data.yaml mit relativem, portablen Pfad) |
 | GET | `/api/labeling/datasets/{ds}/download` | **Neu (V0.6):** Exportierten Datensatz als ZIP herunterladen (für Transfer auf den Trainings-PC) |
+| POST | `/api/shutdown` | **Neu (27.09.2026):** TTLab komplett beenden (Backend, Frontend-Devserver, Shell-Fenster). `409`, solange eine Videoanalyse läuft |
 | GET | `/api/health` | Health Check |
 
 **Hinweis:** Match- und Rally-IDs sind Integer (nicht UUID). Match-Status: `pending`, `processing`, `completed`, `failed`.
@@ -2260,52 +2285,21 @@ export default function RallyTimeline({
 
 ## Nächste Schritte
 
-### Sofort (nächster Chat: Start V0.6)
+### Sofort (nächste Sitzung: V0.6 fortsetzen – Pakete 2 & 3)
 
-1. **Vorbereitungs-Änderungen committen & pushen**
-   - One-Click-Installer (`install-TTLab.bat`), `TTLab starten.bat` im Repo, vereinfachtes README (DE/EN), Roadmap-Ergänzung V0.9 (.exe)
-   - `git add -A && git commit -m "V0.6 prep: One-Click-Installer, vereinfachtes README, Roadmap V0.9" && git push`
+**Aktueller Stand:** Phase 2 Code fertig & verifiziert (siehe Versionshistorie V0.6), uncommittet (Stand 20.09.2026): `backend/app/ball_detector.py` (neu), `rally_detection.py`, `video_processor.py`, `labeling.py`, `models.py`, `database.py`, `schemas.py`, `main.py`, `requirements.txt` (+ onnxruntime), `PROJEKTUEBERGABE.md`. Frontend-Änderungen aus derselben Sitzung (ShortcutsModal-Portal-Fix, FrameLabeler-Watchdog/Last-Labeled-Button, Sprungweiten-Feld) ebenfalls uncommittet. **Commit-Vorschlag:** zwei Commits: 1) Frontend-Fixes „V0.6 UX: Shortcut-Modal-Portal, Frame-Lade-Watchdog, letzter gelabelter Frame, Sprungweite einstellbar", 2) Backend „V0.6 Phase 2: Ball-Detector (ML+Heuristik-Fallback), Rotations-Fix, model_version".
 
-2. **V0.6 Planning finalisieren (Ball-Tracking-Modell)**
-   - ~~Labeling-Tool spezifizieren~~ → integriert ins TTLab-Frontend (Route `/labeling`), Backend extrahiert Frames server-seitig (Browser kann kein HEVC/10-bit dekodieren)
-   - ~~Datensatz-Strategie~~ → eigene Videos, gelabelt mit dem integrierten Tool
-   - ~~Modell-Auswahl~~ → YOLOv8n, Training auf GTX-1050-Desktop (Linux Mint, CUDA, `batch=8, imgsz=640` für 2 GB VRAM)
-   - Integration: ONNX Runtime im Backend (kein torch!), `HeuristicBallDetector` bleibt als Fallback vollständig erhalten
+**WICHTIG für die nächste Sitzung:**
+1. **Offene Masken-Frage klären** (siehe Versionshistorie V0.6): Spielzone vs. Tischplatte, Entscheidung per Ground-Truth-Vergleich (Match 2: 118 validierte Rallys in DB). Vor der Entscheidung KEINE neuen Analysen von MOV-Videos als verbindlich werten.
+2. ~~**Paket 2 – E2E-Tests ins Repo**~~ ✅ **Erledigt (27.09.2026):** 6 Suiten unter `frontend/e2e/` (test-draw/jump/scroll/modal/rapid/lastlabeled.mjs, 1:1 aus der vorherigen Sitzung überführt, 2 kaputte Assertionen korrigiert), Runner `npm run e2e` (Exit-Code pro Suite via `process.exitCode`), `puppeteer-core` als devDependency, README mit Voraussetzungen. **Alle 6 Suiten laufen grün** (verifiziert am 27.09.2026). Suiten legen eigene `uitest_*`/`jumptest_*`/…-Datensätze an, `v1-ml-training` wird nie angefasst.
+3. ~~**Paket 3 – pytest**~~ ✅ **Erledigt (27.09.2026):** `backend/tests/` mit `test_labeling.py` (BBox-Validierung, Altformat-Migration, BOM, kaputtes JSON, Export-Determinismus + data.yaml-Portabilität + Multi-Box/Negativ-Labels, Stats), `test_highlights.py` (classify_highlight-Grenzfälle: exakt 10s/24 Impacts/0.9×max, max_score=0, Cap bei 1.0), `test_bounce_filter.py` (7 Bounce-Szenarien + Nicht-Mutation), `test_video_processor.py` (_parse_frame_rate inkl. eval-Injektion & 0-Divisor, rotate_frame 0°=No-Op gleiche Objekt-Identität, 90/180/270, Roundtrip). **48/48 Tests grün** (`python -m pytest tests`). `requirements-dev.txt` (pytest) angelegt. Phase-2-Verifikationsskripte eingecheckt unter `backend/tests/phase2_verification/` (README erklärt Bit-Identitäts-Workflow; `.npy`-Baseline bewusst nicht im Repo). Hinweis: das Backend-venv wurde verschoben – pip nur per `python -m pip` nutzen, `pip.exe` zeigt noch auf den alten Pfad.
+4. **Nach dem Training des Users:** `data/models/ball_yolov8n.onnx` liegt bereit → komplette Analyse eines Matches mit ML laufen lassen, mit Heuristik + User-Ground-Truth vergleichen; Evaluationsskript `evaluate.py` bauen.
 
-### V0.6 (Ball-Tracking-Modell)
-
-1. **Labeling-Tool entwickeln**
-   - Einfaches React-Tool: Video frame-by-frame durchgehen
-   - Bounding Box um Ball zeichnen (x, y, width, height)
-   - Export als YOLO-Format (txt-Dateien mit normalisierten Koordinaten)
-   - Ziel: 500-1000 annotierte Frames
-
-2. **Datensatz sammeln**
-   - Eigene Trainingsvideos durchgehen
-   - Verschiedene Bedingungen abdecken:
-     - Gute/schlechte Beleuchtung
-     - Verschiedene Kamerawinkel
-     - Weiße/orange Bälle
-     - Unterschiedliche Ballgrößen (nah/fern)
-
-3. **Modell trainieren**
-   - YOLOv8n Architecture wählen (klein, schnell für Echtzeit)
-   - Auf GTX 1050 trainieren (2 GB VRAM Limit beachten)
-   - Hyperparameter-Tuning (learning rate, batch size, epochs)
-   - Expected: 50-100 Epochs, ~2-4 Stunden Training
-
-4. **Integration in Backend**
-   - ONNX-Export des trainierten Modells
-   - ONNX Runtime im Backend einbinden
-   - RallyDetector um `_detect_ball_ml()` erweitern
-   - Fallback auf alte Methode bei ML-Fehlern
-   - **Wichtig:** Performance-Modus-Muster übernehmen (parallele Worker via `os.cpu_count()`, Qualität darf nie schlechter werden)
-
-5. **Evaluation**
-   - Test-Videos mit Ground Truth vergleichen
-   - Precision, Recall, F1-Score berechnen
-   - False Positives analysieren (wo scheitert das Modell?)
-   - Iteratives Verbessern (mehr Daten für Problemfälle)
+**Beenden-Funktion & Start-Skript-Fix (27.09.2026, umgesetzt & E2E-verifiziert):**
+- **`TTLab starten.bat`:** Räumt vor dem Start alte TTLab-Prozesse auf (schließt Fenster mit Titel „TTLab Backend/Frontend" per `taskkill /T /F`, killt alles auf Port 8000/3000 per PowerShell) – der `WinError 10013` (Port durch vergessenen alten Prozess belegt) kann so nicht mehr auftreten. **Ortsunabhängig:** Liegt die .bat nicht im Projektordner (z.B. Desktop-Kopie), fällt sie auf den festen Pfad `C:\Users\Jonas\Documents\OpenCode\ttlab\` zurück (mit Fehlermeldung, falls auch der nicht existiert) – Desktop-Kopie und Repo-Version sind identisch.
+- **Windows-Terminal-Fix im Shutdown:** `start`-Fenster öffnen bei Win11-Default in Windows Terminal, wo `cmd.exe` keinen Fenstertitel trägt – das Skript sammelt deshalb die **Eltern-cmd-Kette jedes Server-Prozesses VOR dem Kill** (CIM-Instanzen verschwinden mit dem Prozess!) und schließt alle cmd-Vorfahren (inkl. npm.cmd-Zwischenschicht), tötet aber niemals `WindowsTerminal.exe` selbst (fremde Tabs des Nutzers).
+- **Beenden-Button** oben rechts (`ShutdownButton.tsx`, rot, „⏻ Beenden", DE/EN, Bestätigungs-Schritt): ruft `POST /api/shutdown`. Der Endpoint **verweigert mit 409, solange ein Match `status="processing"` hat** (Notizen & Labeling speichern ohnehin automatisch – Debounce/Auto-Save). Sonst startet er `shutdown_ttlab.ps1` (Repo-Root, detached via `CREATE_NO_WINDOW` + DEVNULL-Handles – `DETACHED_PROCESS`+`close_fds` lässt PowerShell lautlos sterben!) und beendet: Backend-PID, alles auf Port 8000/3000, die TTLab-Shell-Fenster. Frontend versucht `window.close()` und zeigt sonst ein Vollbild-Overlay „TTLab wurde beendet – Tab kann geschlossen werden".
+- **Verifikation:** Echter Shutdown-Run (Ports 8000+3000 tot, beide Dummy-Shell-Fenster geschlossen, Log `%TEMP%\ttlab_shutdown.log`), 409-Schutz mit künstlich laufender Analyse (Backend überlebt), Button im Frontend-Markup. Stolperfalle entdeckt: Der Backend-Start setzt `processing`-Matches auf `pending` zurück (Stale-Reset im lifespan) – der 409-Test muss den Status NACH dem Start setzen.
 
 ### Danach (V0.7/V0.8)
 
