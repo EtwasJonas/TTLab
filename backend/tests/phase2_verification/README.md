@@ -12,7 +12,8 @@ automatisierbar). Sie werden **nicht** vom pytest-Lauf eingesammelt
 | `capture_baseline.py` | VOR einer Pipeline-Änderung ausführen: speichert Motion-Scores (`.npy`) + Ball-Hits (`.json`) als Bit-Identitäts-Referenz für Match 5 (unrotiertes MP4) und Match 2 (180°-iPhone-MOV) |
 | `verify_after.py` | NACH der Änderung ausführen: vergelt Motion/Ball-Hits exakt gegen die Baseline, prüft Rotations-Verhalten + Detektor-Fallback (auto/heuristic/kaputtes Modell) |
 | `baseline_ball_hits.json` | Baseline vom 20.09.2026 (V0.6 Phase 2). `motion_match5_before.npy` (72 KB) liegt noch in `%TEMP%\opencode\phase2-verify\` und ist zu groß/beispielgebunden fürs Repo – bei einer neuen Baseline neu erzeugen. |
-| (Referenz) `motion_match5_before.npy` | s. o. |
+| `playzone_measurement.py` | Ground-Truth-Messung der Spielzonen-Faktoren (27.09.2026): 1× Motion+Audio pro Video (Temp-Cache), dann pro `TTLAB_PLAY_ZONE`-Faktor Ball-Validierung + Rally-Zusammenbau, Vergleich gegen die User-Ground-Truth (Match-Regel: Zeit-Überlappung ≥ 20 % des kürzeren Fensters). Läuft ~15 min (Match-2-Motion ~9 min). Pfade im Skriptkopf sind hardcoded (wie bei den anderen Skripten hier). **Ergebnis: Faktor 0.0 (Tischplatte) gewinnt F1 auf beiden Matches → Default bleibt 0.0** (Details: PROJEKTUEBERGABE.md, „ENTSCHIEDEN"). Für den ML-Realtest dasselbe Skript mit `MLBallDetector` statt `HeuristicBallDetector` wiederverwenden. |
+| `playzone_results.json` | Messergebnisse vom 27.09.2026 (Match 2 + Match 5, Faktoren 0/0.5/1.0/1.5, Precision/Recall/F1) |
 
 ## Nutzung bei Pipeline-Änderungen
 

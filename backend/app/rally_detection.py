@@ -13,6 +13,33 @@ from app.ball_detector import HeuristicBallDetector, create_ball_detector
 from app.video_processor import get_display_rotation, rotate_frame
 
 
+def play_zone_polygon(polygon: np.ndarray, factor: float) -> np.ndarray:
+    """Expand a table polygon (pixel coords) upward into the play zone.
+
+    factor 0.0 = the table surface itself (V0.5 behaviour, bit-identical).
+    factor 1.0 = additionally the airspace one table height ABOVE the
+    surface - the ball flies there between hits, so ball validation must
+    see it (the table-plate-only mask catches the ball only at bounce
+    points).
+
+    The expansion is the convex hull of the table polygon plus a copy
+    shifted straight up by factor * polygon height. This follows the
+    table's tilt (camera perspective) instead of assuming a level table
+    and never widens the zone sideways beyond the table edges.
+    """
+    factor = max(0.0, min(3.0, float(factor)))
+    if factor <= 0.0:
+        return polygon
+    poly_height = float(polygon[:, 1].max() - polygon[:, 1].min())
+    if poly_height <= 0:
+        return polygon
+    shifted = polygon.copy()
+    shifted[:, 1] -= int(round(factor * poly_height))
+    merged = np.vstack([polygon, shifted])
+    hull = cv2.convexHull(merged)
+    return hull.reshape(-1, 2)
+
+
 class RallyDetector:
     def __init__(self, motion_threshold: float = 15.0, audio_threshold: float = 0.3):
         self.motion_threshold = motion_threshold
@@ -49,6 +76,11 @@ class RallyDetector:
         # (previous behaviour). Kept switchable so the equivalence test can
         # fall back to "triple" if frame selection ever differs.
         self.ball_seek_mode = "single"
+        # V0.6 play zone: how far the ball-validation mask extends above the
+        # table surface, in table heights (TTLAB_PLAY_ZONE, default 0.0 =
+        # table plate only = bit-identical V0.5 behaviour). The value is
+        # validated against the user's ground truth - see PROJEKTUEBERGABE.
+        self.play_zone_factor = max(0.0, min(3.0, float(os.getenv("TTLAB_PLAY_ZONE", "0.0"))))
 
     def classify_highlight(
         self,
@@ -683,9 +715,12 @@ class RallyDetector:
             [[int(x * mask_w), int(y * mask_h)] for x, y in table_points],
             dtype=np.int32,
         )
-        # Build the table mask once per scanner instead of once per peak
+        # Build the ball-validation mask once per scanner instead of once
+        # per peak. TTLAB_PLAY_ZONE expands the table polygon into the play
+        # zone (airspace above the table) so the ball is validated during
+        # its flight too, not only at bounce points.
         mask = np.zeros((mask_h, mask_w), dtype=np.uint8)
-        cv2.fillPoly(mask, [polygon], 255)
+        cv2.fillPoly(mask, [play_zone_polygon(polygon, self.play_zone_factor)], 255)
 
         def scan(peak_times: List[float]) -> int:
             hits = 0

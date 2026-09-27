@@ -1,0 +1,110 @@
+{
+  "match2": {
+    "gt_accepted": 97,
+    "gt_rejected": 21,
+    "factors": {
+      "0.0": {
+        "detected": 117,
+        "tp": 88,
+        "fp": 29,
+        "fn": 9,
+        "precision": 0.752,
+        "recall": 0.907,
+        "f1": 0.822,
+        "matched_rejected": 17,
+        "tp_impact_mean": 14.9,
+        "fp_impact_mean": 8.8
+      },
+      "0.5": {
+        "detected": 146,
+        "tp": 97,
+        "fp": 49,
+        "fn": 0,
+        "precision": 0.664,
+        "recall": 1.0,
+        "f1": 0.798,
+        "matched_rejected": 21,
+        "tp_impact_mean": 14.5,
+        "fp_impact_mean": 7.6
+      },
+      "1.0": {
+        "detected": 147,
+        "tp": 97,
+        "fp": 50,
+        "fn": 0,
+        "precision": 0.66,
+        "recall": 1.0,
+        "f1": 0.795,
+        "matched_rejected": 21,
+        "tp_impact_mean": 14.5,
+        "fp_impact_mean": 7.5
+      },
+      "1.5": {
+        "detected": 148,
+        "tp": 97,
+        "fp": 51,
+        "fn": 0,
+        "precision": 0.655,
+        "recall": 1.0,
+        "f1": 0.792,
+        "matched_rejected": 21,
+        "tp_impact_mean": 14.5,
+        "fp_impact_mean": 7.5
+      }
+    }
+  },
+  "match5": {
+    "gt_accepted": 16,
+    "gt_rejected": 4,
+    "factors": {
+      "0.0": {
+        "detected": 17,
+        "tp": 13,
+        "fp": 4,
+        "fn": 3,
+        "precision": 0.765,
+        "recall": 0.812,
+        "f1": 0.788,
+        "matched_rejected": 4,
+        "tp_impact_mean": 16.3,
+        "fp_impact_mean": 10.0
+      },
+      "0.5": {
+        "detected": 28,
+        "tp": 16,
+        "fp": 12,
+        "fn": 0,
+        "precision": 0.571,
+        "recall": 1.0,
+        "f1": 0.727,
+        "matched_rejected": 4,
+        "tp_impact_mean": 15.3,
+        "fp_impact_mean": 7.9
+      },
+      "1.0": {
+        "detected": 29,
+        "tp": 16,
+        "fp": 13,
+        "fn": 0,
+        "precision": 0.552,
+        "recall": 1.0,
+        "f1": 0.711,
+        "matched_rejected": 4,
+        "tp_impact_mean": 15.3,
+        "fp_impact_mean": 7.6
+      },
+      "1.5": {
+        "detected": 29,
+        "tp": 16,
+        "fp": 13,
+        "fn": 0,
+        "precision": 0.552,
+        "recall": 1.0,
+        "f1": 0.711,
+        "matched_rejected": 4,
+        "tp_impact_mean": 15.3,
+        "fp_impact_mean": 7.6
+      }
+    }
+  }
+}
