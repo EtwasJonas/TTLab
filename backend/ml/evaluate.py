@@ -191,6 +191,11 @@ def main() -> int:
     factors = [float(f) for f in args.factors.split(",") if f.strip()]
     detector_names = [d.strip() for d in args.detectors.split(",") if d.strip()]
 
+    # MODELS_DIR (../data/models) und relative Pfade der App sind auf das
+    # backend-Verzeichnis bezogen - das Skript kann aus jedem Ordner
+    # gestartet werden.
+    os.chdir(os.path.join(PROJECT_ROOT, "backend"))
+
     detector = RallyDetector()
     video_path, points, gt = load_match(args.match)
     print(f"Match {args.match}: {video_path}")
