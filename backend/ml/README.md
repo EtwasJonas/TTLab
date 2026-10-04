@@ -126,13 +126,30 @@ Helligkeits-Heuristik** – TTLab funktioniert also jederzeit ohne Modell.
 
 ## Qualität prüfen
 
-Nach dem Training in `runs/ball_yolov8n/`:
+Nach dem Training in `runs/<name>/`:
 
 - `results.png`: Verlauf von Precision/Recall/mAP – mAP50 sollte für den
   Start **> 0.7** erreichen (Ball ist ein einfaches, einzelnes Objekt)
 - `confusion_matrix.png`: FALSE-Positive-Rate
 - Liefert das Modell zu viele Fehlalarme: mehr Negativ-Frames labeln
   (Frames ohne Ball aus Szenen mit Bewegung/weißen Objekten)
+
+## Evaluation gegen die Ground-Truth (auf dem TTLab-Rechner)
+
+`evaluate.py` läuft **im Backend-venv** (nicht im venv-ml – es braucht cv2/
+librosa/onnxruntime, kein torch) und vergleicht komplette Erkennungsläufe
+gegen die manuell validierten Rallys in der DB (accepted = echt, rejected =
+kein Rally). Motion+Audio werden pro Video einmal berechnet und im Temp-
+Ordner gecacht – Wechsel zwischen Detektoren/Faktoren sind danach billig:
+
+```bash
+cd ttlab/backend
+python ml/evaluate.py --match 5 --detectors heuristic --factors 0.0        # schnell
+python ml/evaluate.py --match 2 --detectors heuristic,ml --factors 0.0,0.5,1.0
+```
+
+Voraussetzung für `--detectors ml`: `data/models/*.onnx` auf diesem Rechner.
+Ergebnisse landen in `ml/evaluate_results.json` (nicht eingecheckt).
 
 ## Häufige Probleme
 

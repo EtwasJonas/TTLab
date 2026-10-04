@@ -28,6 +28,7 @@ data/models/
 # ML-Training (V0.6): Trainings-Läufe und Umgebung auf dem Trainings-PC
 backend/ml/runs/
 backend/ml/venv-ml/
+backend/ml/evaluate_results.json
 
 # Environment
 .env
