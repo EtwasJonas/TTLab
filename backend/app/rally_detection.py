@@ -40,6 +40,43 @@ def play_zone_polygon(polygon: np.ndarray, factor: float) -> np.ndarray:
     return hull.reshape(-1, 2)
 
 
+def rally_gate_flag(
+    group_times: List[float],
+    positions: Optional[List[Tuple[float, float]]],
+) -> bool:
+    """True if an impact group looks like pure ball handling, not a rally.
+
+    Signals from the group-level ground-truth sweep (matches 2/7, 169
+    accepted / 49 rejected groups, see PROJEKTUEBERGABE "Rally-Gate"):
+    a real rally moves the ball across the table (wide x spread of the
+    validated ball positions), while hopping, throwing and pre-serve
+    dribbling keep the ball local. Groups with NO detected ball position
+    are suspicious when they are short (real rallies almost always have
+    the ball over the table at bounce points; garbage clips usually do
+    not, or the handling happens next to the table).
+
+    Rule A: >= 3 positions, local ball (x_range < 0.12) and found at >=
+    40% of the peaks. Rule B: zero positions in a short group (< 10
+    peaks). Group-level: catches ~49% of the garbage groups, flags ~5%
+    of real ones (they land in "review" and stay fully intact).
+
+    positions=None (heuristic detector, no ball centers) -> never flag.
+    """
+    if positions is None:
+        return False
+    if len(group_times) < 2:
+        return False
+    n_pos = len(positions)
+    if n_pos == 0:
+        return len(group_times) < 10
+    if n_pos < 3:
+        return False
+    xs = [p[0] for p in positions]
+    x_range = max(xs) - min(xs)
+    ratio = n_pos / max(1, len(group_times))
+    return x_range < 0.12 and ratio >= 0.4
+
+
 class RallyDetector:
     def __init__(self, motion_threshold: float = 15.0, audio_threshold: float = 0.3):
         self.motion_threshold = motion_threshold
@@ -81,6 +118,16 @@ class RallyDetector:
         # table plate only = bit-identical V0.5 behaviour). The value is
         # validated against the user's ground truth - see PROJEKTUEBERGABE.
         self.play_zone_factor = max(0.0, min(3.0, float(os.getenv("TTLAB_PLAY_ZONE", "0.0"))))
+        # V0.6 rally gate (TTLAB_RALLY_GATE, default "review"): impact groups
+        # that look like pure ball handling (hopping/throwing, no real rally)
+        # are flagged. "review" = rally lands in validation_status "review"
+        # instead of auto-accept (user decides, nothing is lost), "reject" =
+        # directly rejected, "off" = old behaviour. Requires a positions-
+        # capable ball detector (ML); the heuristic is never affected.
+        self.rally_gate_mode = os.getenv("TTLAB_RALLY_GATE", "review").lower()
+        if self.rally_gate_mode not in {"off", "review", "reject"}:
+            print(f"[WARNUNG] Ungültiges TTLAB_RALLY_GATE={self.rally_gate_mode!r} - verwende 'review'")
+            self.rally_gate_mode = "review"
 
     def classify_highlight(
         self,
@@ -431,6 +478,7 @@ class RallyDetector:
             start, end, score = candidate[:3]
             impact_count = int(candidate[3]) if len(candidate) > 3 else 0
             ball_hits = int(candidate[4]) if len(candidate) > 4 else 0
+            gate_flag = bool(candidate[5]) if len(candidate) > 5 else False
 
             # Dynamic duration check - don't artificially extend short rallies
             actual_duration = end - start
@@ -444,6 +492,13 @@ class RallyDetector:
                 validation_status = "accepted"
                 if score < 0.35 and impact_count < 3 and (table_points and ball_hits == 0):
                     validation_status = "review"
+                # Rally gate (V0.6): pure ball handling (hopping/throwing) is
+                # flagged by the ML ball positions - it never touches the
+                # rally's own boundaries, only its trust level.
+                if gate_flag and self.rally_gate_mode == "review":
+                    validation_status = "review"
+                elif gate_flag and self.rally_gate_mode == "reject":
+                    validation_status = "rejected"
 
                 accepted.append({
                     "id": i + 1,
@@ -535,8 +590,14 @@ class RallyDetector:
         ball_workers: int = 1,
         progress_callback: Optional[Callable[[float, str], None]] = None,
         ball_detector=None,
-    ) -> List[Tuple[float, float, float, int, int]]:
-        """Group table-tennis impact sounds into points instead of motion blobs."""
+    ) -> List[Tuple[float, float, float, int, int, bool]]:
+        """Group table-tennis impact sounds into points instead of motion blobs.
+
+        Candidate tuple: (start, end, score, impact_count, ball_hits,
+        gate_flag). gate_flag=True marks a group that looks like pure ball
+        handling (see rally_gate_flag) - detect_rallies turns it into a
+        "review"/"rejected" status depending on TTLAB_RALLY_GATE.
+        """
         if len(peak_times) < 2:
             return []
 
@@ -555,7 +616,7 @@ class RallyDetector:
         groups.append((times, heights))
 
         # Phase 1: basic gates + bounce filter -> pending groups
-        pending: List[List[float]] = []
+        pending: List[Tuple[List[float], List[float]]] = []
         trimmed_groups = 0
         discarded_groups = 0
         for group_times, group_heights in groups:
@@ -570,24 +631,29 @@ class RallyDetector:
                     discarded_groups += 1
                     continue
                 trimmed_groups += 1
-            pending.append(group_times)
+            pending.append((group_times, group_heights))
 
         # Phase 2: ball validation, parallel ACROSS groups (a group only has
-        # a handful of peaks, so parallelizing within one group barely helps)
+        # a handful of peaks, so parallelizing within one group barely helps).
+        # Positions are always collected when the detector provides them -
+        # the rally gate needs them and hits stay identical either way.
         ball_hits_list = self._validate_ball_hits(
             video_path,
-            pending,
+            [t for t, _h in pending],
             table_points,
             max_workers=ball_workers,
             progress_callback=progress_callback,
             ball_detector=ball_detector,
+            collect_positions=True,
         )
 
         # Phase 3: assemble candidates in the original group order
         candidates = []
-        for group_times, ball_hits in zip(pending, ball_hits_list):
+        for (group_times, group_heights), (ball_hits, positions) in zip(pending, ball_hits_list):
             if table_points and ball_hits < 2:
                 continue
+
+            gate_flag = rally_gate_flag(group_times, positions)
 
             # Reduced buffer times to avoid artificially long clips
             start = max(0.0, group_times[0] - self.rally_buffer_start)
@@ -601,7 +667,7 @@ class RallyDetector:
             end_index = min(len(combined_scores), int(end / time_resolution) + 1)
             score = float(np.mean(combined_scores[start_index:end_index]))
 
-            candidates.append((start, end, score, len(group_times), ball_hits))
+            candidates.append((start, end, score, len(group_times), ball_hits, gate_flag))
 
         if trimmed_groups or discarded_groups:
             print(
@@ -618,7 +684,8 @@ class RallyDetector:
         max_workers: int = 1,
         progress_callback: Optional[Callable[[float, str], None]] = None,
         ball_detector=None,
-    ) -> List[int]:
+        collect_positions: bool = False,
+    ) -> List:
         """Validate ball visibility for all rally groups.
 
         Groups are validated in parallel (one persistent VideoCapture per
@@ -626,17 +693,21 @@ class RallyDetector:
         live progress report per finished group. ``ball_detector`` decides
         between the ML model and the classic heuristic (see ball_detector.py);
         the heuristic keeps V0.5 behaviour bit-identically.
+
+        With ``collect_positions=True`` (used by the rally gate) each result
+        is a ``(hits, positions)`` tuple; positions are the normalized ball
+        centers per validated peak (ML only, otherwise None).
         """
         n = len(peak_groups)
         if n == 0:
             return []
         if not table_points or len(table_points) != 4:
-            return [0] * n
+            return [(0, None)] * n if collect_positions else [0] * n
 
         if ball_detector is None:
             ball_detector = create_ball_detector()
 
-        results = [0] * n
+        results: List = [(0, None)] * n if collect_positions else [0] * n
         total_done = [0]
         lock = threading.Lock()
 
@@ -654,13 +725,15 @@ class RallyDetector:
         if workers == 1:
             release, scan = self._ball_scanner(video_path, table_points, ball_detector)
             if scan is None:
-                return [0] * n
+                return [(0, None)] * n if collect_positions else [0] * n
             try:
                 for i in range(n):
                     results[i] = scan(peak_groups[i])
                     report_done()
             finally:
                 release()
+            if not collect_positions:
+                results = [r[0] for r in results]
             return results
 
         index_queue: "queue.Queue[int]" = queue.Queue()
@@ -687,6 +760,8 @@ class RallyDetector:
             t.start()
         for t in threads:
             t.join()
+        if not collect_positions:
+            results = [r[0] for r in results]
         return results
 
     def _ball_scanner(
@@ -721,9 +796,11 @@ class RallyDetector:
         # its flight too, not only at bounce points.
         mask = np.zeros((mask_h, mask_w), dtype=np.uint8)
         cv2.fillPoly(mask, [play_zone_polygon(polygon, self.play_zone_factor)], 255)
+        collect_positions = getattr(ball_detector, "provides_positions", False)
 
-        def scan(peak_times: List[float]) -> int:
+        def scan(peak_times: List[float]) -> Tuple[int, Optional[List[Tuple[float, float]]]]:
             hits = 0
+            positions: List[Tuple[float, float]] = []
             for timestamp in peak_times:
                 if self.ball_seek_mode == "single":
                     before_ok, before, mid_ok, mid, after_ok, after = self._read_peak_frames_single(cap, timestamp)
@@ -734,9 +811,16 @@ class RallyDetector:
                 before = rotate_frame(before, rotation)
                 mid = rotate_frame(mid, rotation) if mid_ok else before
                 after = rotate_frame(after, rotation)
-                if ball_detector.is_ball_candidate(before, mid, after, mask):
+                if collect_positions:
+                    hit, center = ball_detector.is_ball_candidate_pos(before, mid, after, mask)
+                    if hit:
+                        hits += 1
+                        positions.append(center)
+                elif ball_detector.is_ball_candidate(before, mid, after, mask):
                     hits += 1
-            return hits
+            if collect_positions:
+                return hits, positions
+            return hits, None
 
         def release() -> None:
             cap.release()

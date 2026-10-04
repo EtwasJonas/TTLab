@@ -25,7 +25,7 @@ rotate_frame() returns the unchanged array for 0°.
 import glob
 import os
 import threading
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -54,6 +54,10 @@ class HeuristicBallDetector:
     """
 
     model_version = HEURISTIC_MODEL_VERSION
+    # The heuristic returns only a yes/no decision - no ball center. The
+    # rally gate (see rally_detection.rally_gate_flag) therefore stays
+    # inactive with this detector.
+    provides_positions = False
 
     def is_ball_candidate(
         self,
@@ -91,6 +95,8 @@ class MLBallDetector:
     internally. Preprocessing mirrors the ultralytics letterbox pipeline
     exactly, because the model was trained on the labeling tool's images.
     """
+
+    provides_positions = True
 
     def __init__(self, model_path: str, confidence: float = ML_CONFIDENCE_THRESHOLD):
         import onnxruntime as ort
@@ -186,26 +192,40 @@ class MLBallDetector:
         after: np.ndarray,
         mask: np.ndarray,
     ) -> bool:
-        """True if the model finds a ball inside the table area.
+        """True if the model finds a ball inside the table area."""
+        hit, _center = self.is_ball_candidate_pos(before, mid, after, mask)
+        return hit
 
-        Only the `mid` frame (the audio peak moment) is classified - that is
-        the frame where the ball is at the impact position. `before`/`after`
-        stay in the signature so both detectors are drop-in interchangeable.
-        A detection counts when its CENTER lies inside the table mask, which
-        mirrors the heuristic's "candidate inside the table area" rule.
+    def is_ball_candidate_pos(
+        self,
+        before: np.ndarray,
+        mid: np.ndarray,
+        after: np.ndarray,
+        mask: np.ndarray,
+    ) -> Tuple[bool, Optional[Tuple[float, float]]]:
+        """Like is_ball_candidate, but also returns the ball center.
+
+        The center is normalized to the mask (display-frame) coordinates
+        (cx/mask_w, cy/mask_h) or None. The rally gate uses these positions
+        to tell a real rally (ball flying across the table) from pure ball
+        handling like hopping or throwing (ball stays local).
         """
         try:
             detections = self.detect(mid)
         except Exception as e:  # noqa: BLE001 - never crash an analysis
             print(f"[WARNUNG] ML-Ballerkennung fehlgeschlagen ({e}) - Peak gilt als ohne Ball")
-            return False
+            return False, None
 
         mask_h, mask_w = mask.shape[:2]
-        for cx, cy, _bw, _bh, _conf in detections:
+        best = None
+        for cx, cy, _bw, _bh, conf in detections:
             x, y = int(round(cx)), int(round(cy))
             if 0 <= x < mask_w and 0 <= y < mask_h and mask[y, x] == 255:
-                return True
-        return False
+                if best is None or conf > best[2]:
+                    best = (cx, cy, conf)
+        if best is None:
+            return False, None
+        return True, (best[0] / mask_w, best[1] / mask_h)
 
 
 def find_model_file() -> Optional[str]:
