@@ -24,8 +24,11 @@ Hardware notes for the GTX 1050 (2 GB VRAM):
 import argparse
 import os
 import sys
+import tempfile
 
-DEFAULT_DATASETS_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "datasets")
+# Repo-Layout: data/ liegt am Projektstamm (TTLab/data/datasets), das Skript
+# in backend/ml/ - daher zwei Ebenen hoch.
+DEFAULT_DATASETS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data", "datasets")
 
 
 def main() -> int:
@@ -82,9 +85,25 @@ def main() -> int:
         return 1
 
     print(f"[OK] Datensatz: {yolo_dir}")
+
+    # Ultralytics 8.x resolves a RELATIVE 'path' in data.yaml against the
+    # CURRENT WORKING DIRECTORY, not against the yaml file - training from
+    # backend/ml would look for images in the wrong place. We therefore
+    # write a temporary yaml with the ABSOLUTE dataset dir. The exported
+    # data.yaml stays untouched (it remains portable in the ZIP).
+    import yaml
+
+    with open(data_yaml, encoding="utf-8-sig") as f:
+        data_cfg = yaml.safe_load(f) or {}
+    data_cfg["path"] = yolo_dir
+    tmp_fd, tmp_yaml = tempfile.mkstemp(prefix="ttlab_data_", suffix=".yaml")
+    with os.fdopen(tmp_fd, "w", encoding="utf-8", newline="\n") as f:
+        yaml.safe_dump(data_cfg, f, allow_unicode=True, sort_keys=False)
+    print(f"[OK] Pfad absolutisiert (temporäre YAML: {tmp_yaml})")
+
     model = YOLO("yolov8n.pt")  # nano variant: smallest, fastest, enough for one class
     results = model.train(
-        data=data_yaml,
+        data=tmp_yaml,
         epochs=args.epochs,
         batch=args.batch,
         imgsz=args.imgsz,

@@ -33,20 +33,34 @@ klicken. Es entsteht `data/datasets/<name>/yolo/` mit `images/train`,
 
 Nach dem Klick auf **„Trainings-Export erstellen"** wird der Export erstellt und
 **automatisch als ZIP heruntergeladen** (alternativ später per Button
-„⬇ ZIP erneut herunterladen"). Die ZIP enthält den fertigen `yolo/`-Ordner:
+„⬇ ZIP erneut herunterladen"). Die ZIP enthält den fertigen Export:
 
 ```
 v1-ml-training_yolo/
-├── data.yaml          (portabel: relativer Pfad, funktioniert überall)
+├── data.yaml          (portabel: relativer Pfad, train_yolo.py absolutisiert zur Laufzeit)
 ├── images/train/  +  images/val/
 └── labels/train/  +  labels/val/
 ```
 
-Diese ZIP auf dem Trainings-Rechner entpacken und den enthaltenen Ordner nach
-`<projekt>/data/datasets/<name>/yolo` legen (oder `--datasets-dir` beim
-Trainingsskript entsprechend setzen).
+**Ablageort (wichtig):** ZIP entpacken, den Ordner `v1-ml-training_yolo` in
+`yolo` umbenennen und unter `<projekt>/data/datasets/v1-ml-training/` ablegen:
+
+```bash
+cd <projekt>
+mkdir -p data/datasets/v1-ml-training
+mv ~/v1-ml-training_yolo data/datasets/v1-ml-training/yolo
+ls data/datasets/v1-ml-training/yolo/data.yaml   # muss existieren
+```
+
+`train_yolo.py` sucht per Default genau dort (`data/datasets` am Projektstamm).
 
 ### 4. Umgebung einrichten (einmalig, Linux Mint)
+
+**Achtung GTX 1050 (Pascal, sm_61):** aktuelle PyTorch-Builds (CUDA 12.6/13.0)
+enthalten **keine Kernels mehr für sm_61** – `pip install ultralytics` zieht
+trotzdem einen solchen Build und das Training stürzt mit „no kernel image
+available" ab. Deshalb zuerst ultralytics, dann Torch **explizit als cu118-Build**
+(die letzte Wheel-Generation mit Pascal-Support) drüber installieren:
 
 ```bash
 sudo apt update && sudo apt install python3-venv
@@ -54,27 +68,33 @@ cd ttlab/backend/ml
 python3 -m venv venv-ml
 source venv-ml/bin/activate
 pip install ultralytics
+pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu118
 ```
 
-> `ultralytics` zieht PyTorch inkl. CUDA-Unterstützung (~2,5 GB Download).
-> Die GTX 1050 (Pascal, compute 6.1) wird von aktuellen Torch-Builds
-> unterstützt.
-
-CUDA prüfen:
+CUDA-Kernels prüfen – **sm_61 muss in der Liste stehen**, und der echte
+Kernel-Test muss eine Zahl ausgeben:
 
 ```bash
-python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
-# Erwartet: True NVIDIA GeForce GTX 1050
+python -c "import torch; print(torch.__version__, torch.cuda.get_arch_list())"
+python -c "import torch; x = torch.randn(8, 8, device='cuda'); print((x @ x).sum().item())"
+# Erwartet: 2.5.1+cu118 [... 'sm_61' ...] und eine Zahl
 ```
 
-Falls `False`: NVIDIA-Treiber prüfen (`nvidia-smi`) und ggf. die
-CUDA-Variante von PyTorch installieren (siehe pytorch.org-Anleitung).
+Falls sm_61 fehlt oder der Kernel-Test abstürzt: Treiber prüfen (`nvidia-smi`).
 
 ### 5. Training starten
 
 ```bash
-python train_yolo.py --dataset baelle_v1
+python train_yolo.py --dataset v1-ml-training
 ```
+
+(Default `--datasets-dir` ist `data/datasets` am Projektstamm; abweichende
+Ablageorte per `--datasets-dir` angeben.)
+
+**Keine manuellen Pfad-Anpassungen nötig:** Ultralytics löst ein relatives
+`path:` in data.yaml gegen das Arbeitsverzeichnis auf (nicht gegen die YAML) –
+das Skript schreibt deshalb vor dem Training automatisch eine temporäre YAML
+mit absolutem Pfad. Das exportierte `data.yaml` bleibt unverändert portabel.
 
 Empfohlene Standardwerte sind bereits gesetzt (`batch=8`, `imgsz=640`,
 `epochs=100`, AMP an) und auf **2 GB VRAM** ausgelegt.
@@ -118,7 +138,9 @@ Nach dem Training in `runs/ball_yolov8n/`:
 
 | Problem | Lösung |
 |---------|--------|
+| `no kernel image is available for execution on the device` | Falscher Torch-Build für GTX 1050 (sm_61): `pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu118` (siehe Schritt 4) |
 | `CUDA out of memory` | `--batch 4`, `--imgsz 512` |
 | `torch.cuda.is_available() == False` | `nvidia-smi` prüfen, Treiber aktualisieren |
+| `Dataset '...' images not found, missing path '.../images/val'` | Training aus einem Ordner mit relativem `path: .` in data.yaml gestartet – aktuellen `train_yolo.py` nutzen (absolutisiert automatisch) oder Skript aus dem yolo-Ordner heraus starten |
 | Training sehr langsam (CPU) | `--device 0` explizit setzen; sonst läuft CPU |
 | mAP zu niedrig | Mehr/diversere Frames labeln, Negativ-Frames ergänzen, mehr Epochs |
